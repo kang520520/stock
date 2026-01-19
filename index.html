@@ -24,9 +24,12 @@
         .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* 讓表格在資料過多時能順暢橫移 */
         .table-container { overflow-x: auto; max-height: 750px; width: 100%; }
         table { border-collapse: separate; border-spacing: 0; width: 100%; }
+        
+        .datalist-input::-webkit-calendar-picker-indicator {
+            display: none !important;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8 text-slate-800">
@@ -51,9 +54,9 @@
                     <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 font-bold">🔍</span>
                     <input type="text" id="keyword-search" oninput="runFilter()" 
                         class="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold shadow-inner" 
-                        placeholder="搜尋代號、公司名稱 (自動過濾引號雜訊)">
+                        placeholder="搜尋代號、公司名稱">
                 </div>
-                <div class="text-xs font-black text-indigo-400 uppercase tracking-widest hidden md:block italic tracking-tighter text-right">Database Connected</div>
+                <div class="text-xs font-black text-indigo-400 uppercase tracking-widest hidden md:block italic tracking-tighter text-right">TEST MODE</div>
             </div>
 
             <div id="filter-container" class="space-y-3"></div>
@@ -72,12 +75,6 @@
         </div>
 
         <div class="bg-white rounded-3xl shadow-xl border border-slate-200 overflow-hidden">
-            <div class="p-4 bg-slate-50 border-b flex justify-between items-center text-[11px] font-black text-slate-400">
-                <div class="flex items-center gap-2 uppercase tracking-widest">
-                    <div class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                    目前顯示支數：<span id="result-count-text" class="text-indigo-600">0</span>
-                </div>
-            </div>
             <div class="table-container">
                 <table class="text-left border-collapse">
                     <thead id="table-head">
@@ -85,23 +82,23 @@
                             <th class="p-4">系統初始化中...</th>
                         </tr>
                     </thead>
-                    <tbody id="stock-list" class="text-slate-700 divide-y divide-slate-100 italic-none"></tbody>
+                    <tbody id="stock-list" class="text-slate-700 divide-y divide-slate-100"></tbody>
                 </table>
             </div>
         </div>
     </div>
 
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-        import { getFirestore, collection, getDocs, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
         const firebaseConfig = {
-            apiKey: "AIzaSyDnhwU3IZ3ScrViOLEgOMymXxDK2F0b0_Y",
-            authDomain: "stock-9b4fe.firebaseapp.com",
-            projectId: "stock-9b4fe",
-            storageBucket: "stock-9b4fe.firebasestorage.app",
-            messagingSenderId: "559837110738",
-            appId: "1:559837110738:web:a1bc107a7ed01a3e81a80b"
+            apiKey: "AIzaSyDcrQxCW62uLQpwra3gAHBedfhixQ8xdYU",
+            authDomain: "test-f194b.firebaseapp.com",
+            projectId: "test-f194b",
+            storageBucket: "test-f194b.firebasestorage.app",
+            messagingSenderId: "538788175196",
+            appId: "1:538788175196:web:f73a483780f656f85a7599"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -109,32 +106,33 @@
         let allStocks = [], sortKey = '', sortDirection = 1, uniqueOptions = {};
 
         const indicatorGroups = {
-            "🎯 核心": ["價格", "籌碼力道", "產業", "股本(億)"],
-            "💰 籌碼": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
+            "🎯 核心指標": ["價格", "漲跌", "漲跌幅", "成交量", "籌碼力道", "產業", "股本(億)"],
+            "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
             "📊 集中度": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
-            "💎 財報": ["近5年平均現金殖利率%"]
+            "💎 財報回報": ["近5年平均現金殖利率%"]
         };
 
         async function init() {
             const status = document.getElementById('status'), dateTxt = document.getElementById('update-date'), spinner = document.getElementById('spinner');
+            const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Firebase 連線超時")), 8000));
             try {
-                const dSnap = await getDoc(doc(db, "settings", "lastUpdate"));
-                if (dSnap.exists()) dateTxt.innerText = "資料日期：" + dSnap.data().date;
-
-                const snap = await getDocs(collection(db, "stocks"));
-                allStocks = snap.docs.map(doc => doc.data());
-
-                ["籌碼力道", "產業"].forEach(k => {
-                    let set = new Set();
-                    allStocks.forEach(s => { const v = fuzzyGet(s, k); if(v) set.add(v); });
-                    uniqueOptions[k] = Array.from(set).sort();
-                });
-
+                await Promise.race([
+                    (async () => {
+                        const dSnap = await getDoc(doc(db, "settings", "lastUpdate"));
+                        if (dSnap.exists()) dateTxt.innerText = "資料日期：" + dSnap.data().date;
+                        const snap = await getDocs(collection(db, "stocks"));
+                        allStocks = snap.docs.map(doc => doc.data());
+                        ["籌碼力道", "產業"].forEach(k => {
+                            let set = new Set();
+                            allStocks.forEach(s => { const v = fuzzyGet(s, k); if(v) set.add(v); });
+                            uniqueOptions[k] = Array.from(set).sort();
+                        });
+                    })(),
+                    timeout
+                ]);
                 status.innerText = `已載入 ${allStocks.length} 支`;
-                spinner.style.display = 'none';
-                addFilterRow();
-                runFilter();
             } catch (e) { status.innerText = "連線失敗"; }
+            finally { spinner.style.display = 'none'; addFilterRow(); runFilter(); }
         }
 
         function fuzzyGet(obj, target) {
@@ -157,7 +155,7 @@
             }
             row.innerHTML = `<select onchange="updateValueInput(this)" class="indicator-select p-2 border rounded-xl bg-white w-full md:w-64 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500">${groups}</select>
                 <select class="operator-select p-2 border rounded-xl bg-white w-20 text-center font-black"><option value=">=">≥</option><option value="<=">≤</option><option value="==">=</option><option value="include">含</option></select>
-                <div class="value-container flex-1 md:flex-none"><input type="number" step="any" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600"></div>
+                <div class="value-container flex-1 md:flex-none"></div>
                 <button onclick="this.parentElement.remove(); runFilter();" class="ml-auto text-slate-300 hover:text-red-500 font-bold px-2 text-xl">✕</button>`;
             container.appendChild(row);
             updateValueInput(row.querySelector('.indicator-select'));
@@ -165,7 +163,16 @@
 
         window.updateValueInput = function(selectEl) {
             const row = selectEl.parentElement, valContainer = row.querySelector('.value-container'), key = selectEl.value;
-            if (["籌碼力道", "產業"].includes(key)) {
+            if (key === "價格") {
+                valContainer.innerHTML = `
+                    <input list="ma-options" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500" placeholder="數字或MA">
+                    <datalist id="ma-options">
+                        <option value="5MA">
+                        <option value="10MA">
+                        <option value="20MA">
+                        <option value="60MA">
+                    </datalist>`;
+            } else if (["籌碼力道", "產業"].includes(key)) {
                 let opts = (uniqueOptions[key] || []).map(o => `<option value="${o}">${o}</option>`).join('');
                 valContainer.innerHTML = `<select class="p-2 border rounded-xl bg-white w-full md:w-48 font-bold text-indigo-600">${opts}</select>`;
                 row.querySelector('.operator-select').value = "include";
@@ -179,17 +186,28 @@
             const keyword = document.getElementById('keyword-search')?.value.toLowerCase().trim() || "";
             const filterRows = document.querySelectorAll('#filter-container > div');
             const filters = Array.from(filterRows).map(r => ({
-                key: r.querySelector('.indicator-select').value, op: r.querySelector('.operator-select').value, val: r.querySelector('.value-container').children[0].value
+                key: r.querySelector('.indicator-select').value, 
+                op: r.querySelector('.operator-select').value, 
+                val: r.querySelector('.value-container').querySelector('input, select').value
             }));
 
             let result = allStocks.filter(s => {
                 const id = String(fuzzyGet(s, "代碼")).replace(/"/g, ""), name = String(fuzzyGet(s, "名稱")).toLowerCase();
                 if (keyword && !id.includes(keyword) && !name.includes(keyword)) return false;
+                
                 return filters.every(f => {
                     if (f.val === "") return true;
                     const sv = fuzzyGet(s, f.key);
+                    let v = parseFloat(sv) || 0;
+                    let tv;
+
+                    if (f.key === "價格" && ["5MA", "10MA", "20MA", "60MA"].includes(f.val)) {
+                        tv = parseFloat(fuzzyGet(s, f.val)) || 0;
+                    } else {
+                        tv = parseFloat(f.val) || 0;
+                    }
+
                     if (f.op === "include") return String(sv || "").includes(f.val);
-                    const v = parseFloat(sv) || 0, tv = parseFloat(f.val);
                     if (f.op === '>=') return v >= tv;
                     if (f.op === '<=') return v <= tv;
                     return v == tv;
@@ -197,12 +215,10 @@
             });
 
             document.getElementById('result-count-badge').innerText = result.length;
-            document.getElementById('result-count-text').innerText = result.length;
-
             if (sortKey) {
                 result.sort((a, b) => {
-                    let vA = fuzzyGet(a, sortKey), vB = fuzzyGet(b, sortKey);
-                    return (parseFloat(vA) || 0) > (parseFloat(vB) || 0) ? (1 * sortDirection) : (-1 * sortDirection);
+                    let vA = parseFloat(fuzzyGet(a, sortKey)) || 0, vB = parseFloat(fuzzyGet(b, sortKey)) || 0;
+                    return vA > vB ? (1 * sortDirection) : (-1 * sortDirection);
                 });
             }
             renderTable(result, filters.map(f => f.key));
@@ -210,19 +226,15 @@
 
         function renderTable(data, dynamicKeys = []) {
             const thead = document.getElementById('table-head'), tbody = document.getElementById('stock-list');
-            
-            // 定義欄寬的 CSS 類
             const colWidths = {
-                "代碼": "w-[80px]",
-                "名稱": "w-[120px]",
-                "價格": "w-[90px]",
-                "產業": "w-[140px]",
-                "經營項目": "min-w-[280px]",
-                "概念股": "min-w-[280px]",
+                "代碼": "w-[80px]", "名稱": "w-[120px]", "價格": "w-[80px]",
+                "漲跌": "w-[90px]", "漲跌幅": "w-[110px]", "成交量": "w-[100px]",
+                "5MA": "w-[80px]", "10MA": "w-[80px]", "20MA": "w-[80px]", "60MA": "w-[80px]",
+                "產業": "w-[140px]", "經營項目": "min-w-[280px]", "概念股": "min-w-[280px]",
                 "動態指標": "w-[110px]"
             };
 
-            const headFixed = ["代碼", "名稱", "價格"];
+            const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量", "5MA", "10MA", "20MA", "60MA"];
             const tailFixed = ["產業", "經營項目", "概念股"];
             const middleExtras = dynamicKeys.filter(k => !headFixed.includes(k) && !tailFixed.includes(k));
             const allHeaders = [...headFixed, ...middleExtras, ...tailFixed];
@@ -230,7 +242,8 @@
             thead.innerHTML = `<tr>${allHeaders.map(h => {
                 const isExtra = middleExtras.includes(h);
                 const widthClass = colWidths[h] || colWidths["動態指標"];
-                return `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black ${widthClass} ${isExtra ? 'text-indigo-600 text-center' : ''}" onclick="handleSort('${h}')">
+                const centerClass = (headFixed.includes(h) && h !== "代碼" && h !== "名稱") || isExtra ? 'text-center' : '';
+                return `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black ${widthClass} ${centerClass} ${isExtra ? 'text-indigo-600' : ''}" onclick="handleSort('${h}')">
                     ${h} ${sortKey===h?(sortDirection===1?'↑':'↓'):''}
                 </th>`;
             }).join('')}</tr>`;
@@ -239,21 +252,29 @@
                 const rowCells = allHeaders.map(h => {
                     const val = fuzzyGet(s, h);
                     const widthClass = colWidths[h] || colWidths["動態指標"];
-                    
                     if (h === "代碼") {
                         const id = String(val).replace(/"/g, "");
                         return `<td class="p-5 font-mono font-bold text-indigo-500 italic text-[14px] ${widthClass}"><a href="https://tw.stock.yahoo.com/quote/${id}.TW/technical-analysis" target="_blank" class="hover:underline">${id}</a></td>`;
                     }
                     if (h === "名稱") return `<td class="p-5 font-bold text-slate-800 text-[14px] ${widthClass}">${val}</td>`;
                     if (h === "價格") return `<td class="p-5 font-black text-indigo-600 text-[16px] italic ${widthClass}">${val || 0}</td>`;
+                    
+                    // --- 核心修改：加大漲跌與漲跌幅資料 ---
+                    if (h === "漲跌") {
+                        const num = parseFloat(val) || 0;
+                        const colorClass = num > 0 ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
+                        return `<td class="p-5 font-black italic text-center ${colorClass} text-[16px] ${widthClass}">${val || 0}</td>`;
+                    }
+                    if (h === "漲跌幅") {
+                        const num = parseFloat(val) || 0;
+                        const colorClass = num > 0 ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
+                        return `<td class="p-5 font-black italic text-center ${colorClass} text-[18px] ${widthClass}">${val || 0}</td>`;
+                    }
+
+                    if (["5MA", "10MA", "20MA", "60MA", "成交量"].includes(h)) return `<td class="p-5 font-bold text-center text-slate-600 text-[14px] ${widthClass}">${val || 0}</td>`;
                     if (h === "產業") return `<td class="p-5 text-slate-600 font-medium text-[14px] ${widthClass}">${val}</td>`;
-                    if (h === "經營項目") {
-                        return `<td class="p-5 py-6 ${widthClass}"><div class="text-slate-500 text-[12px] line-clamp-2" title="${val}">${val || '無資料'}</div></td>`;
-                    }
-                    if (h === "概念股") {
-                        return `<td class="p-5 py-6 ${widthClass}"><div class="text-slate-400 text-[11px] line-clamp-2" title="${val}">${val || '無資料'}</div></td>`;
-                    }
-                    // 動態指標欄位：置中並上色
+                    if (h === "經營項目") return `<td class="p-5 py-6 ${widthClass}"><div class="text-slate-500 text-[12px] line-clamp-2" title="${val}">${val || '無資料'}</div></td>`;
+                    if (h === "概念股") return `<td class="p-5 py-6 ${widthClass}"><div class="text-slate-400 text-[11px] line-clamp-2" title="${val}">${val || '無資料'}</div></td>`;
                     return `<td class="p-5 font-bold text-indigo-600 text-center bg-indigo-50/30 text-[14px] ${widthClass}">${val ?? '--'}</td>`;
                 });
                 return `<tr class="hover:bg-indigo-50/40 transition-colors border-b border-slate-100">${rowCells.join('')}</tr>`;
