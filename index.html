@@ -86,6 +86,9 @@
                         <span id="result-count-badge" class="text-indigo-600 font-black text-[18px]">0</span>
                         <span class="text-indigo-400 text-xs font-bold uppercase ml-2">支符合</span>
                     </div>
+                    <button onclick="clearAllFilters()" class="bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-bold hover:bg-red-100 hover:text-red-600 transition text-[13px] flex items-center gap-2">
+                        <span>🧹</span> 一鍵清除
+                    </button>
                 </div>
                 <button onclick="exportToExcel()" class="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 transition text-[14px]">匯出 CSV</button>
             </div>
@@ -158,6 +161,14 @@
                 addFilterRow();
                 runFilter();
             } catch (e) { status.innerText = "連線失敗"; }
+        }
+
+        // --- 核心功能：一鍵清除 ---
+        window.clearAllFilters = function() {
+            document.getElementById('filter-container').innerHTML = '';
+            document.getElementById('keyword-search').value = '';
+            addFilterRow(); // 清除後自動補回一條空的，方便重新開始
+            runFilter();
         }
 
         window.addFilterRow = function() {
@@ -257,12 +268,7 @@
                         return `<td class="p-5 font-bold text-blue-600 underline italic"><a href="https://tw.stock.yahoo.com/quote/${id}.TW/technical-analysis" target="_blank">${id}</a></td>`;
                     }
                     if (h === "名稱") return `<td class="p-5 text-center"><span class="${nameStyle}">${val}</span></td>`;
-                    
-                    // --- 核心優化：價格字體特大號 ---
-                    if (h === "價格") {
-                        return `<td class="p-5 font-black text-indigo-600 italic text-[22px]">${val || 0}</td>`;
-                    }
-                    
+                    if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[22px]">${val || 0}</td>`;
                     if (h === "漲跌" || h === "漲跌幅") {
                         const colorClass = (num > 0) ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
                         const fontSize = h === "漲跌幅" ? 'text-[20px]' : 'text-[17px]';
