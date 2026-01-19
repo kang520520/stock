@@ -122,7 +122,6 @@
         const db = getFirestore(app);
         let allStocks = [], sortKey = '', sortDirection = 1, uniqueOptions = {};
 
-        // --- 優化分類清單 ---
         const indicatorGroups = {
             "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量"],
             "🔍 基礎屬性": ["籌碼力道", "產業", "股本(億)"],
@@ -258,7 +257,12 @@
                         return `<td class="p-5 font-bold text-blue-600 underline italic"><a href="https://tw.stock.yahoo.com/quote/${id}.TW/technical-analysis" target="_blank">${id}</a></td>`;
                     }
                     if (h === "名稱") return `<td class="p-5 text-center"><span class="${nameStyle}">${val}</span></td>`;
-                    if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[16px]">${val || 0}</td>`;
+                    
+                    // --- 核心優化：價格字體特大號 ---
+                    if (h === "價格") {
+                        return `<td class="p-5 font-black text-indigo-600 italic text-[22px]">${val || 0}</td>`;
+                    }
+                    
                     if (h === "漲跌" || h === "漲跌幅") {
                         const colorClass = (num > 0) ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
                         const fontSize = h === "漲跌幅" ? 'text-[20px]' : 'text-[17px]';
