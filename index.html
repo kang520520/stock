@@ -18,36 +18,17 @@
         td { white-space: nowrap; }
         .wrap-cell { white-space: normal !important; min-width: 250px; }
 
-        /* --- 名稱膠囊樣式 --- */
-        .name-badge {
-            padding: 6px 14px;
-            border-radius: 9999px;
-            font-weight: 800;
-            display: inline-block;
-            transition: all 0.3s ease;
-        }
-        .limit-up-premium { 
-            background: linear-gradient(135deg, #ff4d4d 0%, #f43f5e 100%);
-            color: white !important; 
-            box-shadow: 0 4px 12px rgba(244, 63, 94, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .limit-down-premium { 
-            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-            color: white !important;
-            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .name-normal { color: #1e293b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+        /* 高亮顯示篩選過的欄位 */
+        .highlight-filter { background-color: #fdf2f8 !important; color: #db2777 !important; font-weight: 900 !important; }
 
-        /* 特大號箭頭 */
-        .ma-arrow {
-            font-size: 20px;
-            font-weight: 900;
-            margin-left: 6px;
-            vertical-align: middle;
-            display: inline-block;
-        }
+        .name-badge { padding: 6px 14px; border-radius: 9999px; font-weight: 800; display: inline-block; transition: all 0.3s ease; }
+        .limit-up-premium { background: linear-gradient(135deg, #ff4d4d 0%, #f43f5e 100%); color: white !important; box-shadow: 0 4px 12px rgba(244, 63, 94, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .limit-down-premium { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white !important; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); border: 1px solid rgba(255, 255, 255, 0.2); }
+        .name-normal { color: #1e293b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+        .ma-arrow { font-size: 20px; font-weight: 900; margin-left: 6px; vertical-align: middle; display: inline-block; }
+        
+        .news-icon { margin-left: 8px; font-size: 16px; cursor: pointer; opacity: 0.7; transition: opacity 0.2s; vertical-align: middle; text-decoration: none; }
+        .news-icon:hover { opacity: 1; transform: scale(1.2); }
     </style>
 </head>
 <body class="p-4 md:p-8 text-slate-800">
@@ -55,7 +36,7 @@
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
                 <h1 class="text-3xl font-black text-indigo-600 tracking-tight italic uppercase">大雄Stock Scanner Pro</h1>
-                <p class="text-slate-500 text-sm mt-1 font-bold italic">財富自由</p>
+                <p class="text-slate-500 text-sm mt-1 font-bold italic">財富自由 </p>
             </div>
             <div class="flex flex-col items-end gap-1">
                 <div class="flex items-center gap-3 bg-white px-5 py-2.5 rounded-2xl shadow-sm border border-slate-200">
@@ -86,6 +67,9 @@
                         <span id="result-count-badge" class="text-indigo-600 font-black text-[18px]">0</span>
                         <span class="text-indigo-400 text-xs font-bold uppercase ml-2">支符合</span>
                     </div>
+                    <button id="toggle-extras-btn" onclick="toggleExtras()" class="bg-blue-50 text-blue-600 px-4 py-2.5 rounded-xl font-bold hover:bg-blue-100 transition text-[13px] border border-blue-200">
+                        🔭 顯示完整欄位
+                    </button>
                     <button onclick="clearAllFilters()" class="bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-bold hover:bg-red-100 hover:text-red-600 transition text-[13px] flex items-center gap-2">
                         <span>🧹</span> 一鍵清除
                     </button>
@@ -124,6 +108,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         let allStocks = [], sortKey = '', sortDirection = 1, uniqueOptions = {};
+        let showAllExtras = false;
 
         const indicatorGroups = {
             "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量"],
@@ -132,6 +117,12 @@
             "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
             "💎 財報回報": ["近5年平均現金殖利率%"]
         };
+
+        const colorSensitiveFields = [
+            "外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", 
+            "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數", 
+            "近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"
+        ];
 
         function fuzzyGet(obj, target) {
             if (!obj) return "";
@@ -163,11 +154,16 @@
             } catch (e) { status.innerText = "連線失敗"; }
         }
 
-        // --- 核心功能：一鍵清除 ---
+        window.toggleExtras = function() {
+            showAllExtras = !showAllExtras;
+            document.getElementById('toggle-extras-btn').innerText = showAllExtras ? "🔭 隱藏延伸欄位" : "🔭 顯示完整欄位";
+            runFilter();
+        }
+
         window.clearAllFilters = function() {
-            document.getElementById('filter-container').innerHTML = '';
             document.getElementById('keyword-search').value = '';
-            addFilterRow(); // 清除後自動補回一條空的，方便重新開始
+            document.getElementById('filter-container').innerHTML = '';
+            addFilterRow();
             runFilter();
         }
 
@@ -242,18 +238,22 @@
             renderTable(result, filters.map(f => f.key));
         }
 
-        function renderTable(data, dynamicKeys = []) {
+        function renderTable(data, activeFilterKeys = []) {
             const thead = document.getElementById('table-head'), tbody = document.getElementById('stock-list');
             const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量", "5MA", "10MA", "20MA", "60MA"];
             const tailFixed = ["產業", "經營項目", "概念股"];
-            const middleExtras = dynamicKeys.filter(k => !headFixed.includes(k) && !tailFixed.includes(k));
-            const allHeaders = [...headFixed, ...middleExtras, ...tailFixed];
+            
+            const allPossibleExtras = Object.values(indicatorGroups).flat();
+            const actualExtras = showAllExtras ? allPossibleExtras.filter(k => !headFixed.includes(k) && !tailFixed.includes(k)) : [];
+            const highlightedExtras = activeFilterKeys.filter(k => !headFixed.includes(k) && !tailFixed.includes(k) && !actualExtras.includes(k));
+            const allHeaders = [...headFixed, ...actualExtras, ...highlightedExtras, ...tailFixed];
             
             thead.innerHTML = `<tr>${allHeaders.map(h => `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black" onclick="handleSort('${h}')">${h} ${sortKey===h?(sortDirection===1?'↑':'↓'):''}</th>`).join('')}</tr>`;
 
             tbody.innerHTML = data.map(s => {
                 const pctChange = parseFloat(fuzzyGet(s, "漲跌幅")) || 0;
                 const currentPrice = parseFloat(fuzzyGet(s, "價格")) || 0;
+                const stockId = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
 
                 let nameStyle = "name-badge name-normal";
                 if (pctChange >= 9.5) nameStyle = "name-badge limit-up-premium";
@@ -262,31 +262,43 @@
                 const rowCells = allHeaders.map(h => {
                     const val = fuzzyGet(s, h);
                     const num = parseFloat(val) || 0;
+                    const isFilteredCol = activeFilterKeys.includes(h) ? "highlight-filter" : "";
 
                     if (h === "代碼") {
-                        const id = String(val).replace(/[ "]/g, "");
-                        return `<td class="p-5 font-bold text-blue-600 underline italic"><a href="https://tw.stock.yahoo.com/quote/${id}.TW/technical-analysis" target="_blank">${id}</a></td>`;
+                        return `<td class="p-5 font-bold text-blue-600 underline italic ${isFilteredCol}"><a href="https://tw.stock.yahoo.com/quote/${stockId}.TW/technical-analysis" target="_blank">${stockId}</a></td>`;
                     }
-                    if (h === "名稱") return `<td class="p-5 text-center"><span class="${nameStyle}">${val}</span></td>`;
-                    if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[22px]">${val || 0}</td>`;
+                    if (h === "名稱") {
+                        return `<td class="p-5 text-center ${isFilteredCol}">
+                            <div class="flex items-center justify-center">
+                                <span class="${nameStyle}">${val}</span>
+                                <a href="https://www.cnyes.com/search/news?keyword=${stockId}" target="_blank" class="news-icon" title="鉅亨搜尋新聞">📰</a>
+                            </div>
+                        </td>`;
+                    }
+                    if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[22px] ${isFilteredCol}">${val || 0}</td>`;
+                    
+                    // 核心顏色判斷：漲跌幅 或 指定籌碼欄位
+                    let colorClass = 'text-slate-600';
+                    if (h === "漲跌" || h === "漲跌幅" || colorSensitiveFields.includes(h)) {
+                        colorClass = (num > 0) ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
+                    }
+
                     if (h === "漲跌" || h === "漲跌幅") {
-                        const colorClass = (num > 0) ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
                         const fontSize = h === "漲跌幅" ? 'text-[20px]' : 'text-[17px]';
-                        return `<td class="p-5 font-black italic text-center ${colorClass} ${fontSize}">${val || 0}</td>`;
+                        return `<td class="p-5 font-black italic text-center ${colorClass} ${fontSize} ${isFilteredCol}">${val || 0}</td>`;
                     }
-                    if (h === "經營項目" || h === "概念股") return `<td class="p-5 py-6 wrap-cell text-slate-500 text-[12px]">${val || '無資料'}</td>`;
+                    if (h === "經營項目" || h === "概念股") return `<td class="p-5 py-6 wrap-cell text-slate-500 text-[12px] ${isFilteredCol}">${val || '無資料'}</td>`;
                     
                     if (["5MA", "10MA", "20MA", "60MA"].includes(h)) {
                         let arrow = "";
-                        if (currentPrice > num && num !== 0) {
-                            arrow = `<span class="text-red-500 ma-arrow">↑</span>`;
-                        } else if (currentPrice < num && num !== 0) {
-                            arrow = `<span class="text-emerald-500 ma-arrow">↓</span>`;
-                        }
-                        return `<td class="p-5 font-bold text-center text-slate-600 text-[15px]">${num}${arrow}</td>`;
+                        if (currentPrice > num && num !== 0) { arrow = `<span class="text-red-500 ma-arrow">↑</span>`; } 
+                        else if (currentPrice < num && num !== 0) { arrow = `<span class="text-emerald-500 ma-arrow">↓</span>`; }
+                        return `<td class="p-5 font-bold text-center text-slate-600 text-[15px] ${isFilteredCol}">${num}${arrow}</td>`;
                     }
                     
-                    return `<td class="p-5 font-bold text-center text-slate-600">${val ?? '--'}</td>`;
+                    // 處理指定籌碼欄位的數值顯示
+                    const cellWeight = colorSensitiveFields.includes(h) ? "font-black" : "font-bold";
+                    return `<td class="p-5 ${cellWeight} text-center ${colorClass} ${isFilteredCol}">${val ?? '--'}</td>`;
                 });
                 return `<tr class="hover:bg-indigo-50/40 border-b border-slate-100">${rowCells.join('')}</tr>`;
             }).join('');
