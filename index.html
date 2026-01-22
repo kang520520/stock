@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大雄Stock Scanner Pro</title>
+    <title>大雄Stock Scanner Pro - 雲端同步版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -12,26 +12,20 @@
         thead th { position: sticky; top: 0; background: #f1f5f9; z-index: 20; white-space: nowrap; }
         .loading-spinner { border: 3px solid #f3f3f3; border-top: 3px solid #4f46e5; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
         .table-container { width: 100%; overflow-x: auto; }
         table { border-collapse: separate; border-spacing: 0; width: 100%; table-layout: auto; }
         td { white-space: nowrap; }
         .wrap-cell { white-space: normal !important; min-width: 250px; }
-
         .highlight-filter { background-color: #fdf2f8 !important; color: #db2777 !important; font-weight: 900 !important; }
-
         .name-badge { padding: 6px 14px; border-radius: 9999px; font-weight: 800; display: inline-block; transition: all 0.3s ease; }
         .limit-up-premium { background: linear-gradient(135deg, #ff4d4d 0%, #f43f5e 100%); color: white !important; box-shadow: 0 4px 12px rgba(244, 63, 94, 0.4); border: 1px solid rgba(255, 255, 255, 0.2); }
         .limit-down-premium { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white !important; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); border: 1px solid rgba(255, 255, 255, 0.2); }
         .name-normal { color: #1e293b; background: #f1f5f9; border: 1px solid #e2e8f0; }
         .ma-arrow { font-size: 20px; font-weight: 900; margin-left: 6px; vertical-align: middle; display: inline-block; }
-        
         .news-icon { margin-left: 8px; font-size: 16px; cursor: pointer; opacity: 0.7; transition: opacity 0.2s; vertical-align: middle; text-decoration: none; }
         .news-icon:hover { opacity: 1; transform: scale(1.2); }
-
-        /* 監控清單專屬樣式 */
         .watchlist-container { border-top: 6px solid #4f46e5; }
-        .password-overlay { background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(6px); }
+        .password-overlay { background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(6px); transition: all 0.3s ease; }
         .delete-btn { color: #cbd5e1; cursor: pointer; transition: color 0.2s; }
         .delete-btn:hover { color: #ef4444; }
     </style>
@@ -41,7 +35,7 @@
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
             <div>
                 <h1 class="text-3xl font-black text-indigo-600 tracking-tight italic uppercase">大雄Stock Scanner Pro</h1>
-                <p class="text-slate-500 text-sm mt-1 font-bold italic">財富自由</p>
+                <p class="text-slate-500 text-sm mt-1 font-bold italic">財富自由 (雲端同步版)</p>
             </div>
             <div class="flex flex-col items-end gap-1">
                 <div class="flex items-center gap-3 bg-white px-5 py-2.5 rounded-2xl shadow-sm border border-slate-200">
@@ -56,14 +50,10 @@
             <div class="mb-6 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
                 <div class="relative w-full">
                     <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400 font-bold">🔍</span>
-                    <input type="text" id="keyword-search" oninput="runFilter()" 
-                        class="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold shadow-inner" 
-                        placeholder="搜尋代號、名稱">
+                    <input type="text" id="keyword-search" oninput="runFilter()" class="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold shadow-inner" placeholder="搜尋代號、名稱">
                 </div>
             </div>
-
             <div id="filter-container" class="space-y-3"></div>
-
             <div class="mt-8 flex flex-wrap gap-3 border-t border-slate-100 pt-6 items-center">
                 <button onclick="addFilterRow()" class="bg-slate-800 text-white px-6 py-3 rounded-xl hover:bg-slate-700 transition font-bold shadow-lg text-[14px]">+ 新增篩選</button>
                 <div class="flex-1 flex items-center gap-4">
@@ -72,12 +62,8 @@
                         <span id="result-count-badge" class="text-indigo-600 font-black text-[18px]">0</span>
                         <span class="text-indigo-400 text-xs font-bold uppercase ml-2">支符合</span>
                     </div>
-                    <button id="toggle-extras-btn" onclick="toggleExtras()" class="bg-blue-50 text-blue-600 px-4 py-2.5 rounded-xl font-bold hover:bg-blue-100 transition text-[13px] border border-blue-200">
-                        🔭 顯示完整欄位
-                    </button>
-                    <button onclick="clearAllFilters()" class="bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-bold hover:bg-red-100 hover:text-red-600 transition text-[13px] flex items-center gap-2">
-                        <span>🧹</span> 一鍵清除
-                    </button>
+                    <button id="toggle-extras-btn" onclick="toggleExtras()" class="bg-blue-50 text-blue-600 px-4 py-2.5 rounded-xl font-bold hover:bg-blue-100 transition text-[13px] border border-blue-200">🔭 顯示完整欄位</button>
+                    <button onclick="clearAllFilters()" class="bg-slate-200 text-slate-600 px-4 py-2.5 rounded-xl font-bold hover:bg-red-100 hover:text-red-600 transition text-[13px] flex items-center gap-2"><span>🧹</span> 一鍵清除</button>
                 </div>
                 <button onclick="exportToExcel()" class="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 transition text-[14px]">匯出 CSV</button>
             </div>
@@ -87,7 +73,7 @@
             <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <div class="flex items-center gap-2">
                     <span class="text-xl">⭐</span>
-                    <h2 class="text-xl font-black text-indigo-700 italic tracking-tight uppercase">我的監控清單</h2>
+                    <h2 class="text-xl font-black text-indigo-700 italic tracking-tight uppercase">我的雲端監控清單</h2>
                 </div>
                 <div id="unlock-area" class="flex gap-2">
                     <input type="password" id="watchlist-pw" placeholder="輸入密碼" class="p-2 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400 font-bold">
@@ -95,13 +81,11 @@
                 </div>
                 <button id="lock-btn" onclick="lockWatchlist()" class="hidden bg-slate-200 text-slate-600 px-4 py-2 rounded-xl font-bold text-sm hover:bg-slate-300">🔒 重新上鎖</button>
             </div>
-            
             <div class="relative min-h-[120px]">
                 <div id="pw-mask" class="password-overlay absolute inset-0 z-50 flex flex-col items-center justify-center p-6 text-center">
                     <span class="text-3xl mb-2">🔒</span>
-                    <p class="font-black text-slate-400 uppercase tracking-widest text-xs italic">Encrypted Watchlist / 密碼驗證中</p>
+                    <p class="font-black text-slate-400 uppercase tracking-widest text-xs italic">Encrypted Watchlist / 雲端連線同步中</p>
                 </div>
-
                 <div class="table-container max-h-[400px] overflow-y-auto">
                     <table class="min-w-full">
                         <thead class="bg-slate-100/50">
@@ -116,7 +100,7 @@
                             </tr>
                         </thead>
                         <tbody id="watchlist-body" class="divide-y divide-slate-100 text-center font-bold text-sm">
-                            <tr><td colspan="7" class="p-10 text-slate-300 italic">目前是空的，點擊代碼旁的加號加入</td></tr>
+                            <tr><td colspan="7" class="p-10 text-slate-300 italic">正在從雲端同步清單...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -127,11 +111,9 @@
             <div class="table-container">
                 <table class="text-left">
                     <thead id="table-head">
-                        <tr class="text-slate-400 text-[11px] uppercase border-b">
-                            <th class="p-4">等待連線中...</th>
-                        </tr>
+                        <tr class="text-slate-400 text-[11px] uppercase border-b text-center"><th class="p-4">等待連線中...</th></tr>
                     </thead>
-                    <tbody id="stock-list" class="text-slate-700 divide-y divide-slate-100"></tbody>
+                    <tbody id="stock-list" class="text-slate-700 divide-y divide-slate-100 text-center"></tbody>
                 </table>
             </div>
         </div>
@@ -139,7 +121,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-app.js";
-        import { getFirestore, collection, getDocs, getDoc, doc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyDcrQxCW62uLQpwra3gAHBedfhixQ8xdYU",
@@ -152,9 +134,11 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+
         let allStocks = [], sortKey = '', sortDirection = 1, uniqueOptions = {};
         let showAllExtras = false;
-        let watchlist = JSON.parse(localStorage.getItem('myWatchlist') || '[]');
+        let isUnlocked = false; 
+        let watchlist = []; // 改為從雲端抓取
         const WATCHLIST_PASSWORD = "7330"; 
 
         const indicatorGroups = {
@@ -165,11 +149,7 @@
             "💎 財報回報": ["近5年平均現金殖利率%"]
         };
 
-        const colorSensitiveFields = [
-            "外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", 
-            "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數", 
-            "近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"
-        ];
+        const colorSensitiveFields = ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數", "近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"];
 
         function fuzzyGet(obj, target) {
             if (!obj) return "";
@@ -187,13 +167,16 @@
             try {
                 const dSnap = await getDoc(doc(db, "settings", "lastUpdate"));
                 if (dSnap.exists()) dateTxt.innerText = "資料日期：" + dSnap.data().date;
+                
                 const snap = await getDocs(collection(db, "stocks"));
                 allStocks = snap.docs.map(doc => doc.data());
+                
                 ["籌碼力道", "產業"].forEach(k => {
                     let set = new Set();
                     allStocks.forEach(s => { const v = fuzzyGet(s, k); if(v) set.add(v); });
                     uniqueOptions[k] = Array.from(set).sort();
                 });
+                
                 status.innerText = `已載入 ${allStocks.length} 支`;
                 spinner.style.display = 'none';
                 addFilterRow();
@@ -201,43 +184,64 @@
             } catch (e) { status.innerText = "連線失敗"; }
         }
 
-        window.unlockWatchlist = function() {
+        // --- 【雲端同步邏輯】 ---
+        async function syncWatchlistFromCloud() {
+            try {
+                const snap = await getDocs(collection(db, "userWatchlist"));
+                watchlist = snap.docs.map(doc => doc.id); // 假設 ID 就是股票代碼
+                renderWatchlist();
+            } catch (e) { console.error("同步失敗", e); }
+        }
+
+        window.unlockWatchlist = async function() {
             const pw = document.getElementById('watchlist-pw').value;
             if (pw === WATCHLIST_PASSWORD) {
+                isUnlocked = true;
                 document.getElementById('pw-mask').classList.add('hidden');
                 document.getElementById('unlock-area').classList.add('hidden');
                 document.getElementById('lock-btn').classList.remove('hidden');
-                renderWatchlist();
+                await syncWatchlistFromCloud(); // 解鎖後立刻同步雲端
+                runFilter(); 
             } else { alert("密碼錯誤！"); }
         }
 
         window.lockWatchlist = function() {
+            isUnlocked = false;
             document.getElementById('pw-mask').classList.remove('hidden');
             document.getElementById('unlock-area').classList.remove('hidden');
             document.getElementById('lock-btn').classList.add('hidden');
             document.getElementById('watchlist-pw').value = '';
+            runFilter(); 
         }
 
-        window.addToWatchlist = function(stockId) {
-            if (watchlist.includes(stockId)) {
-                alert("此股票已在清單中");
-                return;
-            }
-            watchlist.push(stockId);
-            localStorage.setItem('myWatchlist', JSON.stringify(watchlist));
-            renderWatchlist();
+        window.addToWatchlist = async function(stockId) {
+            if (!isUnlocked) return;
+            if (watchlist.includes(stockId)) { alert("此股票已在清單中"); return; }
+            
+            try {
+                // 寫入雲端
+                await setDoc(doc(db, "userWatchlist", stockId), {
+                    id: stockId,
+                    timestamp: new Date()
+                });
+                watchlist.push(stockId);
+                renderWatchlist();
+            } catch (e) { alert("寫入失敗"); }
         }
 
-        window.removeFromWatchlist = function(stockId) {
-            watchlist = watchlist.filter(id => id !== stockId);
-            localStorage.setItem('myWatchlist', JSON.stringify(watchlist));
-            renderWatchlist();
+        window.removeFromWatchlist = async function(stockId) {
+            try {
+                // 從雲端刪除
+                await deleteDoc(doc(db, "userWatchlist", stockId));
+                watchlist = watchlist.filter(id => id !== stockId);
+                renderWatchlist();
+            } catch (e) { alert("刪除失敗"); }
         }
 
         function renderWatchlist() {
             const tbody = document.getElementById('watchlist-body');
             if (watchlist.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="7" class="p-10 text-slate-300 italic">目前是空的，點擊代碼旁的加號加入</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="p-10 text-slate-300 italic">目前是空的，解鎖後點擊下方代碼旁的加號加入</td></tr>`;
                 return;
             }
             tbody.innerHTML = watchlist.map((id, index) => {
@@ -258,6 +262,7 @@
             }).join('');
         }
 
+        // --- 其他篩選邏輯保持不變 ---
         window.toggleExtras = function() {
             showAllExtras = !showAllExtras;
             document.getElementById('toggle-extras-btn').innerText = showAllExtras ? "🔭 隱藏延伸欄位" : "🔭 顯示完整欄位";
@@ -294,6 +299,9 @@
             if (key === "價格") {
                 valContainer.innerHTML = `<input list="ma-options" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600 outline-none" placeholder="數字或MA">
                     <datalist id="ma-options"><option value="5MA"><option value="10MA"><option value="20MA"><option value="60MA"></datalist>`;
+            } else if (key === "成交量") {
+                valContainer.innerHTML = `<input list="vol-options" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600 outline-none" placeholder="數字或歷史量">
+                    <datalist id="vol-options"><option value="成交量1"><option value="成交量2"><option value="成交量3"></datalist>`;
             } else if (["籌碼力道", "產業"].includes(key)) {
                 let opts = (uniqueOptions[key] || []).map(o => `<option value="${o}">${o}</option>`).join('');
                 valContainer.innerHTML = `<select class="p-2 border rounded-xl bg-white w-full md:w-48 font-bold text-indigo-600">${opts}</select>`;
@@ -322,7 +330,7 @@
                     if (f.val === "") return true;
                     const sv = fuzzyGet(s, f.key);
                     let v = parseFloat(sv) || 0, tv;
-                    if (f.key === "價格" && ["5MA", "10MA", "20MA", "60MA"].includes(f.val)) {
+                    if (["價格", "成交量"].includes(f.key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(f.val)) {
                         tv = parseFloat(fuzzyGet(s, f.val)) || 0;
                     } else { tv = parseFloat(f.val) || 0; }
                     if (f.op === "include") return String(sv || "").includes(f.val);
@@ -340,7 +348,6 @@
                 });
             }
             renderTable(result, filters.map(f => f.key));
-            if (document.getElementById('pw-mask').classList.contains('hidden')) { renderWatchlist(); }
         }
 
         function renderTable(data, activeFilterKeys = []) {
@@ -352,7 +359,7 @@
             const highlightedExtras = activeFilterKeys.filter(k => !headFixed.includes(k) && !tailFixed.includes(k) && !actualExtras.includes(k));
             const allHeaders = [...headFixed, ...actualExtras, ...highlightedExtras, ...tailFixed];
             
-            thead.innerHTML = `<tr>${allHeaders.map(h => `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black" onclick="handleSort('${h}')">${h} ${sortKey===h?(sortDirection===1?'↑':'↓'):''}</th>`).join('')}</tr>`;
+            thead.innerHTML = `<tr>${allHeaders.map(h => `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black text-center" onclick="handleSort('${h}')">${h} ${sortKey===h?(sortDirection===1?'↑':'↓'):''}</th>`).join('')}</tr>`;
 
             tbody.innerHTML = data.map(s => {
                 const pctChange = parseFloat(fuzzyGet(s, "漲跌幅")) || 0;
@@ -368,21 +375,17 @@
                     const isFilteredCol = activeFilterKeys.includes(h) ? "highlight-filter" : "";
 
                     if (h === "代碼") {
-                        return `<td class="p-5 font-bold text-blue-600 underline italic ${isFilteredCol}">
-                            <div class="flex items-center gap-3">
-                                <button onclick="addToWatchlist('${stockId}')" class="text-indigo-500 hover:text-indigo-700 transition-all hover:scale-125 flex items-center justify-center" title="加入監控">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
-                                </button>
-                                <a href="https://tw.stock.yahoo.com/quote/${stockId}.TW/technical-analysis" target="_blank">${stockId}</a>
-                            </div>
+                        const plusBtn = isUnlocked ? `
+                            <button onclick="addToWatchlist('${stockId}')" class="text-indigo-500 hover:text-indigo-700 transition-all hover:scale-125 flex items-center justify-center" title="加入監控">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                            </button>` : '';
+                        return `<td class="p-5 font-bold text-blue-600 italic ${isFilteredCol}">
+                            <div class="flex items-center justify-center gap-3">${plusBtn}<a class="underline" href="https://tw.stock.yahoo.com/quote/${stockId}.TW/technical-analysis" target="_blank">${stockId}</a></div>
                         </td>`;
                     }
                     if (h === "名稱") {
-                        return `<td class="p-5 text-center ${isFilteredCol}">
-                            <div class="flex items-center justify-center">
-                                <span class="${nameStyle}">${val}</span>
-                                <a href="https://www.cnyes.com/search/news?keyword=${stockId}" target="_blank" class="news-icon" title="鉅亨搜尋新聞">📰</a>
-                            </div>
+                        return `<td class="p-5 ${isFilteredCol}">
+                            <div class="flex items-center justify-center"><span class="${nameStyle}">${val}</span><a href="https://www.cnyes.com/search/news?keyword=${stockId}" target="_blank" class="news-icon" title="鉅亨搜尋新聞">📰</a></div>
                         </td>`;
                     }
                     if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[22px] ${isFilteredCol}">${val || 0}</td>`;
