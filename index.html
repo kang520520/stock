@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大雄Stock Scanner Pro - 安全同步版</title>
+    <title>大雄Stock Scanner Pro - 終極顯示修復版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -124,12 +124,12 @@
         import { getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
         const firebaseConfig = {
-            apiKey: "AIzaSyDcrQxCW62uLQpwra3gAHBedfhixQ8xdYU",
-            authDomain: "test-f194b.firebaseapp.com",
-            projectId: "test-f194b",
-            storageBucket: "test-f194b.firebasestorage.app",
-            messagingSenderId: "538788175196",
-            appId: "1:538788175196:web:f73a483780f656f85a7599"
+            apiKey: "AIzaSyDnhwU3IZ3ScrViOLEgOMymXxDK2F0b0_Y",
+            authDomain: "stock-9b4fe.firebaseapp.com",
+            projectId: "stock-9b4fe",
+            storageBucket: "stock-9b4fe.firebasestorage.app",
+            messagingSenderId: "559837110738",
+            appId: "1:559837110738:web:a1bc107a7ed01a3e81a80b"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -150,6 +150,7 @@
 
         const colorSensitiveFields = ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數", "近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"];
 
+        // 🚀 核心優化：更強力的模糊抓取，確保數值能正確轉為浮點數
         function fuzzyGet(obj, target) {
             if (!obj) return "";
             if (obj[target] !== undefined) return obj[target];
@@ -167,13 +168,13 @@
                 const dSnap = await getDoc(doc(db, "settings", "lastUpdate"));
                 if (dSnap.exists()) dateTxt.innerText = "資料日期：" + dSnap.data().date;
                 const snap = await getDocs(collection(db, "stocks"));
-                
-                // --- 🚀 修改點 1：初始載入後立即依代碼排序 ---
                 allStocks = snap.docs.map(doc => doc.data());
+                
+                // 預設依代碼排序
                 allStocks.sort((a, b) => {
-                    const codeA = String(fuzzyGet(a, "代碼")).replace(/[ "]/g, "");
-                    const codeB = String(fuzzyGet(b, "代碼")).replace(/[ "]/g, "");
-                    return codeA.localeCompare(codeB, undefined, {numeric: true});
+                    const cA = String(fuzzyGet(a, "代碼")).replace(/\D/g, "");
+                    const cB = String(fuzzyGet(b, "代碼")).replace(/\D/g, "");
+                    return parseInt(cA) - parseInt(cB);
                 });
 
                 ["籌碼力道", "產業"].forEach(k => {
@@ -202,11 +203,9 @@
             if (!inputPw) return;
             btn.innerText = "驗證中...";
             btn.disabled = true;
-
             try {
                 const pwSnap = await getDoc(doc(db, "settings1", "password"));
                 const correctPw = pwSnap.exists() ? pwSnap.data().val : null;
-
                 if (String(inputPw) === String(correctPw)) {
                     isUnlocked = true;
                     document.getElementById('pw-mask').classList.add('hidden');
@@ -214,15 +213,9 @@
                     document.getElementById('lock-btn').classList.remove('hidden');
                     await syncWatchlistFromCloud();
                     runFilter(); 
-                } else {
-                    alert("密碼不正確");
-                }
-            } catch (e) {
-                alert("連線失敗，請檢查權限。");
-            } finally {
-                btn.innerText = "解鎖";
-                btn.disabled = false;
-            }
+                } else { alert("密碼不正確"); }
+            } catch (e) { alert("連線失敗"); }
+            finally { btn.innerText = "解鎖"; btn.disabled = false; }
         }
 
         window.lockWatchlist = function() {
@@ -258,10 +251,7 @@
                 tbody.innerHTML = `<tr><td colspan="7" class="p-10 text-slate-300 italic">清單目前是空的</td></tr>`;
                 return;
             }
-            // 監控清單也依代碼排序
-            const sortedWatchlist = [...watchlist].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
-
-            tbody.innerHTML = sortedWatchlist.map((id, index) => {
+            tbody.innerHTML = watchlist.map((id, index) => {
                 const s = allStocks.find(item => String(fuzzyGet(item, "代碼")).replace(/[ "]/g, "") === id);
                 if (!s) return "";
                 const price = fuzzyGet(s, "價格"), change = fuzzyGet(s, "漲跌"), pct = fuzzyGet(s, "漲跌幅"), name = fuzzyGet(s, "名稱");
@@ -357,28 +347,23 @@
             });
 
             document.getElementById('result-count-badge').innerText = result.length;
-
-            // --- 🚀 修改點 2：選股後自動維持代碼排序 (除非有點擊表頭) ---
             if (sortKey) {
                 result.sort((a, b) => {
                     let vA = parseFloat(fuzzyGet(a, sortKey)) || 0, vB = parseFloat(fuzzyGet(b, sortKey)) || 0;
-                    if (isNaN(vA) || isNaN(vB)) {
-                        vA = String(fuzzyGet(a, sortKey));
-                        vB = String(fuzzyGet(b, sortKey));
-                        return vA.localeCompare(vB) * sortDirection;
-                    }
-                    return (vA - vB) * sortDirection;
+                    return vA > vB ? (1 * sortDirection) : (-1 * sortDirection);
                 });
             } else {
+                // 預設代碼排序
                 result.sort((a, b) => {
-                    const codeA = String(fuzzyGet(a, "代碼")).replace(/[ "]/g, "");
-                    const codeB = String(fuzzyGet(b, "代碼")).replace(/[ "]/g, "");
-                    return codeA.localeCompare(codeB, undefined, {numeric: true});
+                    const cA = parseInt(String(fuzzyGet(a, "代碼")).replace(/\D/g, ""));
+                    const cB = parseInt(String(fuzzyGet(b, "代碼")).replace(/\D/g, ""));
+                    return cA - cB;
                 });
             }
             renderTable(result, filters.map(f => f.key));
         }
 
+        // 🚀 重點修復：renderTable 的均線顯示邏輯
         function renderTable(data, activeFilterKeys = []) {
             const thead = document.getElementById('table-head'), tbody = document.getElementById('stock-list');
             const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量", "5MA", "10MA", "20MA", "60MA"];
@@ -399,14 +384,15 @@
                 else if (pctChange <= -9.5) nameStyle = "name-badge limit-down-premium";
 
                 const rowCells = allHeaders.map(h => {
-                    const val = fuzzyGet(s, h);
-                    const num = parseFloat(val) || 0;
+                    let val = fuzzyGet(s, h);
+                    // 🚀 強制將可能是數字的欄位轉為數字
+                    let num = (val !== "" && !isNaN(val)) ? parseFloat(val) : 0;
                     const isFilteredCol = activeFilterKeys.includes(h) ? "highlight-filter" : "";
 
                     if (h === "代碼") {
                         const plusBtn = isUnlocked ? `
                             <button onclick="addToWatchlist('${stockId}')" class="text-indigo-500 hover:text-indigo-700 transition-all hover:scale-125 flex items-center justify-center" title="加入監控">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" cy="12" r="10"></line><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
                             </button>` : '';
                         return `<td class="p-5 font-bold text-blue-600 italic ${isFilteredCol}">
                             <div class="flex items-center justify-center gap-3">${plusBtn}<a class="underline" href="https://tw.stock.yahoo.com/quote/${stockId}.TW/technical-analysis" target="_blank">${stockId}</a></div>
@@ -418,6 +404,7 @@
                         </td>`;
                     }
                     if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[22px] ${isFilteredCol}">${val || 0}</td>`;
+                    
                     let colorClass = 'text-slate-600';
                     if (h === "漲跌" || h === "漲跌幅" || colorSensitiveFields.includes(h)) {
                         colorClass = (num > 0) ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
@@ -427,18 +414,26 @@
                         return `<td class="p-5 font-black italic text-center ${colorClass} ${fontSize} ${isFilteredCol}">${val || 0}</td>`;
                     }
                     if (h === "經營項目" || h === "概念股") return `<td class="p-5 py-6 wrap-cell text-slate-500 text-[12px] ${isFilteredCol}">${val || '無資料'}</td>`;
+                    
+                    // 🚀 均線顯示核心：修正箭頭邏輯與數字顯示
                     if (["5MA", "10MA", "20MA", "60MA"].includes(h)) {
                         let arrow = "";
-                        if (currentPrice > num && num !== 0) arrow = `<span class="text-red-500 ma-arrow">↑</span>`;
-                        else if (currentPrice < num && num !== 0) arrow = `<span class="text-emerald-500 ma-arrow">↓</span>`;
-                        return `<td class="p-5 font-bold text-center text-slate-600 text-[15px] ${isFilteredCol}">${num}${arrow}</td>`;
+                        // 如果現價高於均線，箭頭向上紅；低於則向下綠
+                        if (num > 0) {
+                            if (currentPrice > num) arrow = `<span class="text-red-500 ma-arrow">↑</span>`;
+                            else if (currentPrice < num) arrow = `<span class="text-emerald-500 ma-arrow">↓</span>`;
+                        }
+                        const displayNum = num > 0 ? num.toFixed(2) : "--";
+                        return `<td class="p-5 font-bold text-center text-slate-600 text-[15px] ${isFilteredCol}">${displayNum}${arrow}</td>`;
                     }
+                    
                     const cellWeight = colorSensitiveFields.includes(h) ? "font-black" : "font-bold";
                     return `<td class="p-5 ${cellWeight} text-center ${colorClass} ${isFilteredCol}">${val ?? '--'}</td>`;
                 });
                 return `<tr class="hover:bg-indigo-50/40 border-b border-slate-100">${rowCells.join('')}</tr>`;
             }).join('');
         }
+        
         window.handleSort = (key) => { if (sortKey === key) sortDirection *= -1; else { sortKey = key; sortDirection = -1; } runFilter(); };
         window.exportToExcel = () => {
             let csv = ["\uFEFF"];
