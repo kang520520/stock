@@ -140,7 +140,6 @@
         let isUnlocked = false; 
         let watchlist = []; 
 
-        // --- 【隱藏完成】成交量 1-3 從選單中移除 ---
         const indicatorGroups = {
             "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量"],
             "🔍 基礎屬性": ["籌碼力道", "產業", "股本(億)"],
@@ -168,7 +167,15 @@
                 const dSnap = await getDoc(doc(db, "settings", "lastUpdate"));
                 if (dSnap.exists()) dateTxt.innerText = "資料日期：" + dSnap.data().date;
                 const snap = await getDocs(collection(db, "stocks"));
+                
+                // --- 🚀 修改點 1：初始載入後立即依代碼排序 ---
                 allStocks = snap.docs.map(doc => doc.data());
+                allStocks.sort((a, b) => {
+                    const codeA = String(fuzzyGet(a, "代碼")).replace(/[ "]/g, "");
+                    const codeB = String(fuzzyGet(b, "代碼")).replace(/[ "]/g, "");
+                    return codeA.localeCompare(codeB, undefined, {numeric: true});
+                });
+
                 ["籌碼力道", "產業"].forEach(k => {
                     let set = new Set();
                     allStocks.forEach(s => { const v = fuzzyGet(s, k); if(v) set.add(v); });
@@ -197,9 +204,7 @@
             btn.disabled = true;
 
             try {
-                // --- 【路徑修正】配合您的圖片，改為抓取 settings1 集合 ---
                 const pwSnap = await getDoc(doc(db, "settings1", "password"));
-                // 假設您在 Firebase 欄位名稱填的是 val
                 const correctPw = pwSnap.exists() ? pwSnap.data().val : null;
 
                 if (String(inputPw) === String(correctPw)) {
@@ -213,7 +218,7 @@
                     alert("密碼不正確");
                 }
             } catch (e) {
-                alert("連線失敗，請檢查 Firebase Rules。");
+                alert("連線失敗，請檢查權限。");
             } finally {
                 btn.innerText = "解鎖";
                 btn.disabled = false;
@@ -253,7 +258,10 @@
                 tbody.innerHTML = `<tr><td colspan="7" class="p-10 text-slate-300 italic">清單目前是空的</td></tr>`;
                 return;
             }
-            tbody.innerHTML = watchlist.map((id, index) => {
+            // 監控清單也依代碼排序
+            const sortedWatchlist = [...watchlist].sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+
+            tbody.innerHTML = sortedWatchlist.map((id, index) => {
                 const s = allStocks.find(item => String(fuzzyGet(item, "代碼")).replace(/[ "]/g, "") === id);
                 if (!s) return "";
                 const price = fuzzyGet(s, "價格"), change = fuzzyGet(s, "漲跌"), pct = fuzzyGet(s, "漲跌幅"), name = fuzzyGet(s, "名稱");
@@ -349,10 +357,23 @@
             });
 
             document.getElementById('result-count-badge').innerText = result.length;
+
+            // --- 🚀 修改點 2：選股後自動維持代碼排序 (除非有點擊表頭) ---
             if (sortKey) {
                 result.sort((a, b) => {
                     let vA = parseFloat(fuzzyGet(a, sortKey)) || 0, vB = parseFloat(fuzzyGet(b, sortKey)) || 0;
-                    return vA > vB ? (1 * sortDirection) : (-1 * sortDirection);
+                    if (isNaN(vA) || isNaN(vB)) {
+                        vA = String(fuzzyGet(a, sortKey));
+                        vB = String(fuzzyGet(b, sortKey));
+                        return vA.localeCompare(vB) * sortDirection;
+                    }
+                    return (vA - vB) * sortDirection;
+                });
+            } else {
+                result.sort((a, b) => {
+                    const codeA = String(fuzzyGet(a, "代碼")).replace(/[ "]/g, "");
+                    const codeB = String(fuzzyGet(b, "代碼")).replace(/[ "]/g, "");
+                    return codeA.localeCompare(codeB, undefined, {numeric: true});
                 });
             }
             renderTable(result, filters.map(f => f.key));
@@ -385,7 +406,7 @@
                     if (h === "代碼") {
                         const plusBtn = isUnlocked ? `
                             <button onclick="addToWatchlist('${stockId}')" class="text-indigo-500 hover:text-indigo-700 transition-all hover:scale-125 flex items-center justify-center" title="加入監控">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" cy="12" r="10"></line><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
                             </button>` : '';
                         return `<td class="p-5 font-bold text-blue-600 italic ${isFilteredCol}">
                             <div class="flex items-center justify-center gap-3">${plusBtn}<a class="underline" href="https://tw.stock.yahoo.com/quote/${stockId}.TW/technical-analysis" target="_blank">${stockId}</a></div>
