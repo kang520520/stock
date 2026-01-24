@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>大雄Stock Scanner Pro - 終極顯示修復版</title>
+    <title>大雄Stock Scanner Pro - 顏色與百分比修復版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -93,7 +93,7 @@
                                 <th class="p-3">序號</th>
                                 <th class="p-3">代號</th>
                                 <th class="p-3">名稱</th>
-                                <th class="p-3">現價</th>
+                                <th class="p-3">價格</th>
                                 <th class="p-3">漲跌</th>
                                 <th class="p-3">漲跌幅</th>
                                 <th class="p-3">操作</th>
@@ -124,12 +124,12 @@
         import { getFirestore, collection, getDocs, getDoc, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.0.0/firebase-firestore.js";
 
         const firebaseConfig = {
-            apiKey: "AIzaSyDnhwU3IZ3ScrViOLEgOMymXxDK2F0b0_Y",
-            authDomain: "stock-9b4fe.firebaseapp.com",
-            projectId: "stock-9b4fe",
-            storageBucket: "stock-9b4fe.firebasestorage.app",
-            messagingSenderId: "559837110738",
-            appId: "1:559837110738:web:a1bc107a7ed01a3e81a80b"
+            apiKey: "AIzaSyDcrQxCW62uLQpwra3gAHBedfhixQ8xdYU",
+            authDomain: "test-f194b.firebaseapp.com",
+            projectId: "test-f194b",
+            storageBucket: "test-f194b.firebasestorage.app",
+            messagingSenderId: "538788175196",
+            appId: "1:538788175196:web:f73a483780f656f85a7599"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -148,9 +148,8 @@
             "💎 財報回報": ["近5年平均現金殖利率%"]
         };
 
-        const colorSensitiveFields = ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數", "近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"];
+        const colorSensitiveFields = ["漲跌", "漲跌幅", "外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數", "近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"];
 
-        // 🚀 核心優化：更強力的模糊抓取，確保數值能正確轉為浮點數
         function fuzzyGet(obj, target) {
             if (!obj) return "";
             if (obj[target] !== undefined) return obj[target];
@@ -169,14 +168,6 @@
                 if (dSnap.exists()) dateTxt.innerText = "資料日期：" + dSnap.data().date;
                 const snap = await getDocs(collection(db, "stocks"));
                 allStocks = snap.docs.map(doc => doc.data());
-                
-                // 預設依代碼排序
-                allStocks.sort((a, b) => {
-                    const cA = String(fuzzyGet(a, "代碼")).replace(/\D/g, "");
-                    const cB = String(fuzzyGet(b, "代碼")).replace(/\D/g, "");
-                    return parseInt(cA) - parseInt(cB);
-                });
-
                 ["籌碼力道", "產業"].forEach(k => {
                     let set = new Set();
                     allStocks.forEach(s => { const v = fuzzyGet(s, k); if(v) set.add(v); });
@@ -213,9 +204,14 @@
                     document.getElementById('lock-btn').classList.remove('hidden');
                     await syncWatchlistFromCloud();
                     runFilter(); 
-                } else { alert("密碼不正確"); }
+                } else {
+                    alert("密碼不正確");
+                }
             } catch (e) { alert("連線失敗"); }
-            finally { btn.innerText = "解鎖"; btn.disabled = false; }
+            finally {
+                btn.innerText = "解鎖";
+                btn.disabled = false;
+            }
         }
 
         window.lockWatchlist = function() {
@@ -254,16 +250,25 @@
             tbody.innerHTML = watchlist.map((id, index) => {
                 const s = allStocks.find(item => String(fuzzyGet(item, "代碼")).replace(/[ "]/g, "") === id);
                 if (!s) return "";
-                const price = fuzzyGet(s, "價格"), change = fuzzyGet(s, "漲跌"), pct = fuzzyGet(s, "漲跌幅"), name = fuzzyGet(s, "名稱");
+                const price = fuzzyGet(s, "價格"), 
+                      change = fuzzyGet(s, "漲跌"), 
+                      pctRaw = fuzzyGet(s, "漲跌幅").toString(), 
+                      name = fuzzyGet(s, "名稱");
+                
+                // --- 修正：避免重複加上 % ---
+                const pctDisplay = pctRaw.includes('%') ? pctRaw : pctRaw + '%';
+                
+                // --- 修正：過濾百分比符號後判定顏色 ---
                 const numChange = parseFloat(change) || 0;
                 const colorClass = numChange > 0 ? 'text-red-500' : (numChange < 0 ? 'text-emerald-500' : 'text-slate-500');
+                
                 return `<tr class="hover:bg-indigo-50/30 transition-colors">
                     <td class="p-3 text-slate-400 text-[10px]">${index + 1}</td>
                     <td class="p-3 text-blue-600 font-black italic">${id}</td>
                     <td class="p-3 text-slate-800">${name}</td>
                     <td class="p-3 text-indigo-600 font-black">${price}</td>
                     <td class="p-3 ${colorClass}">${change}</td>
-                    <td class="p-3 ${colorClass}">${pct}%</td>
+                    <td class="p-3 ${colorClass}">${pctDisplay}</td>
                     <td class="p-3"><span onclick="removeFromWatchlist('${id}')" class="delete-btn text-lg">✕</span></td>
                 </tr>`;
             }).join('');
@@ -335,10 +340,11 @@
                 return filters.every(f => {
                     if (f.val === "") return true;
                     const sv = fuzzyGet(s, f.key);
-                    let v = parseFloat(sv) || 0, tv;
+                    // 修正篩選：先移除 % 符號再轉數字比較
+                    let v = parseFloat(sv.toString().replace('%','')) || 0, tv;
                     if (["價格", "成交量"].includes(f.key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(f.val)) {
                         tv = parseFloat(fuzzyGet(s, f.val)) || 0;
-                    } else { tv = parseFloat(f.val) || 0; }
+                    } else { tv = parseFloat(f.val.toString().replace('%','')) || 0; }
                     if (f.op === "include") return String(sv || "").includes(f.val);
                     if (f.op === '>=') return v >= tv;
                     if (f.op === '<=') return v <= tv;
@@ -349,21 +355,14 @@
             document.getElementById('result-count-badge').innerText = result.length;
             if (sortKey) {
                 result.sort((a, b) => {
-                    let vA = parseFloat(fuzzyGet(a, sortKey)) || 0, vB = parseFloat(fuzzyGet(b, sortKey)) || 0;
+                    let vA = parseFloat(fuzzyGet(a, sortKey).toString().replace('%','')) || 0;
+                    let vB = parseFloat(fuzzyGet(b, sortKey).toString().replace('%','')) || 0;
                     return vA > vB ? (1 * sortDirection) : (-1 * sortDirection);
-                });
-            } else {
-                // 預設代碼排序
-                result.sort((a, b) => {
-                    const cA = parseInt(String(fuzzyGet(a, "代碼")).replace(/\D/g, ""));
-                    const cB = parseInt(String(fuzzyGet(b, "代碼")).replace(/\D/g, ""));
-                    return cA - cB;
                 });
             }
             renderTable(result, filters.map(f => f.key));
         }
 
-        // 🚀 重點修復：renderTable 的均線顯示邏輯
         function renderTable(data, activeFilterKeys = []) {
             const thead = document.getElementById('table-head'), tbody = document.getElementById('stock-list');
             const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量", "5MA", "10MA", "20MA", "60MA"];
@@ -376,7 +375,8 @@
             thead.innerHTML = `<tr>${allHeaders.map(h => `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black text-center" onclick="handleSort('${h}')">${h} ${sortKey===h?(sortDirection===1?'↑':'↓'):''}</th>`).join('')}</tr>`;
 
             tbody.innerHTML = data.map(s => {
-                const pctChange = parseFloat(fuzzyGet(s, "漲跌幅")) || 0;
+                const pctStr = fuzzyGet(s, "漲跌幅").toString();
+                const pctChange = parseFloat(pctStr.replace('%','')) || 0;
                 const currentPrice = parseFloat(fuzzyGet(s, "價格")) || 0;
                 const stockId = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                 let nameStyle = "name-badge name-normal";
@@ -384,9 +384,7 @@
                 else if (pctChange <= -9.5) nameStyle = "name-badge limit-down-premium";
 
                 const rowCells = allHeaders.map(h => {
-                    let val = fuzzyGet(s, h);
-                    // 🚀 強制將可能是數字的欄位轉為數字
-                    let num = (val !== "" && !isNaN(val)) ? parseFloat(val) : 0;
+                    const val = fuzzyGet(s, h);
                     const isFilteredCol = activeFilterKeys.includes(h) ? "highlight-filter" : "";
 
                     if (h === "代碼") {
@@ -405,35 +403,31 @@
                     }
                     if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[22px] ${isFilteredCol}">${val || 0}</td>`;
                     
+                    // --- 核心修正：移除百分比符號後判定顏色 ---
                     let colorClass = 'text-slate-600';
+                    const numVal = parseFloat(val.toString().replace('%','')) || 0;
                     if (h === "漲跌" || h === "漲跌幅" || colorSensitiveFields.includes(h)) {
-                        colorClass = (num > 0) ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
+                        colorClass = (numVal > 0) ? 'text-red-500' : (numVal < 0 ? 'text-emerald-500' : 'text-slate-500');
                     }
+
                     if (h === "漲跌" || h === "漲跌幅") {
                         const fontSize = h === "漲跌幅" ? 'text-[20px]' : 'text-[17px]';
                         return `<td class="p-5 font-black italic text-center ${colorClass} ${fontSize} ${isFilteredCol}">${val || 0}</td>`;
                     }
                     if (h === "經營項目" || h === "概念股") return `<td class="p-5 py-6 wrap-cell text-slate-500 text-[12px] ${isFilteredCol}">${val || '無資料'}</td>`;
-                    
-                    // 🚀 均線顯示核心：修正箭頭邏輯與數字顯示
                     if (["5MA", "10MA", "20MA", "60MA"].includes(h)) {
                         let arrow = "";
-                        // 如果現價高於均線，箭頭向上紅；低於則向下綠
-                        if (num > 0) {
-                            if (currentPrice > num) arrow = `<span class="text-red-500 ma-arrow">↑</span>`;
-                            else if (currentPrice < num) arrow = `<span class="text-emerald-500 ma-arrow">↓</span>`;
-                        }
-                        const displayNum = num > 0 ? num.toFixed(2) : "--";
-                        return `<td class="p-5 font-bold text-center text-slate-600 text-[15px] ${isFilteredCol}">${displayNum}${arrow}</td>`;
+                        const maVal = parseFloat(val) || 0;
+                        if (currentPrice > maVal && maVal !== 0) arrow = `<span class="text-red-500 ma-arrow">↑</span>`;
+                        else if (currentPrice < maVal && maVal !== 0) arrow = `<span class="text-emerald-500 ma-arrow">↓</span>`;
+                        return `<td class="p-5 font-bold text-center text-slate-600 text-[15px] ${isFilteredCol}">${val}${arrow}</td>`;
                     }
-                    
                     const cellWeight = colorSensitiveFields.includes(h) ? "font-black" : "font-bold";
                     return `<td class="p-5 ${cellWeight} text-center ${colorClass} ${isFilteredCol}">${val ?? '--'}</td>`;
                 });
                 return `<tr class="hover:bg-indigo-50/40 border-b border-slate-100">${rowCells.join('')}</tr>`;
             }).join('');
         }
-        
         window.handleSort = (key) => { if (sortKey === key) sortDirection *= -1; else { sortKey = key; sortDirection = -1; } runFilter(); };
         window.exportToExcel = () => {
             let csv = ["\uFEFF"];
