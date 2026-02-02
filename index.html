@@ -146,7 +146,8 @@
         let showAllExtras = false, isUnlocked = false, watchlist = []; 
 
         const indicatorGroups = {
-            "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量"],
+            "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量", "成交量1", "成交量2", "成交量3"],
+            "🏹 均線扣抵": ["5扣", "10扣", "20扣", "60扣"],
             "🔍 基礎屬性": ["籌碼力道", "產業", "股本(億)"],
             "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
             "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
@@ -224,7 +225,6 @@
             runFilter(); 
         }
 
-        // 🚀 核心匯出功能 (解鎖限定)
         window.exportWatchlist = function() {
             if (!isUnlocked) return;
             if (watchlist.length === 0) { alert("清單目前為空"); return; }
@@ -238,7 +238,6 @@
             URL.revokeObjectURL(url);
         }
 
-        // 🚀 核心匯入功能 (解鎖限定 + 去重安全檢查)
         window.importWatchlist = function(input) {
             if (!isUnlocked) return;
             const file = input.files[0];
@@ -248,11 +247,8 @@
                 const content = e.target.result;
                 const incomingCodes = content.split(/[,，\s\n\r]+/).map(c => c.trim()).filter(c => c !== "");
                 if (incomingCodes.length === 0) { alert("檔案內容無效"); return; }
-
-                // 過濾重複代號
                 const newCodes = incomingCodes.filter(code => !watchlist.includes(code));
                 if (newCodes.length === 0) { alert("清單中已包含檔案內所有代號"); return; }
-
                 if (confirm(`準備同步匯入 ${newCodes.length} 支股票。是否繼續？`)) {
                     const batch = writeBatch(db);
                     newCodes.forEach(code => {
@@ -297,12 +293,9 @@
                 const s = allStocks.find(item => String(fuzzyGet(item, "代碼")).replace(/[ "]/g, "") === id);
                 if (!s) return "";
                 const price = fuzzyGet(s, "價格"), change = fuzzyGet(s, "漲跌"), pctRaw = fuzzyGet(s, "漲跌幅").toString(), name = fuzzyGet(s, "名稱");
-                
-                // 修正百分比顯示
                 const pctDisplay = pctRaw.includes('%') ? pctRaw : pctRaw + '%';
                 const numChange = parseFloat(change.toString().replace('%','')) || 0;
                 const colorClass = numChange > 0 ? 'text-red-500' : (numChange < 0 ? 'text-emerald-500' : 'text-slate-500');
-                
                 return `<tr class="hover:bg-indigo-50/30 transition-colors">
                     <td class="p-3 text-slate-400 text-[10px]">${index + 1}</td>
                     <td class="p-3 text-blue-600 font-black italic">${id}</td>
@@ -335,7 +328,14 @@
             let groups = "";
             for (let g in indicatorGroups) {
                 groups += `<optgroup label="${g}">`;
-                indicatorGroups[g].forEach(i => groups += `<option value="${i}">${i}</option>`);
+                indicatorGroups[g].forEach(i => {
+                    let displayName = i;
+                    if (i === "成交量") displayName = "今日成交量";
+                    else if (i === "成交量1") displayName = "昨日成交量";
+                    else if (i === "成交量2") displayName = "前日成交量";
+                    else if (i === "成交量3") displayName = "大前日成交量";
+                    groups += `<option value="${i}">${displayName}</option>`;
+                });
                 groups += `</optgroup>`;
             }
             row.innerHTML = `<select onchange="updateValueInput(this)" class="indicator-select p-2 border rounded-xl bg-white w-full md:w-64 font-bold outline-none">${groups}</select>
@@ -351,7 +351,7 @@
             if (key === "價格") {
                 valContainer.innerHTML = `<input list="ma-options" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600 outline-none" placeholder="數字或MA">
                     <datalist id="ma-options"><option value="5MA"><option value="10MA"><option value="20MA"><option value="60MA"></datalist>`;
-            } else if (key === "成交量") {
+            } else if (key.includes("成交量")) {
                 valContainer.innerHTML = `<input list="vol-options" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600 outline-none" placeholder="數字或歷史量">
                     <datalist id="vol-options"><option value="成交量1"><option value="成交量2"><option value="成交量3"></datalist>`;
             } else if (["籌碼力道", "產業"].includes(key)) {
@@ -371,7 +371,6 @@
                 key: r.querySelector('select').value, op: r.querySelector('.operator-select').value, 
                 val: r.querySelector('.value-container').querySelector('input, select')?.value || ""
             }));
-
             let result = allStocks.filter(s => {
                 if (keyword) {
                     const id = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
@@ -381,9 +380,8 @@
                 return filters.every(f => {
                     if (f.val === "") return true;
                     const sv = fuzzyGet(s, f.key);
-                    // 修正篩選邏輯：移除 % 再轉數字
                     let v = parseFloat(sv.toString().replace('%','')) || 0, tv;
-                    if (["價格", "成交量"].includes(f.key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(f.val)) {
+                    if (["價格", "成交量", "成交量1", "成交量2", "成交量3"].includes(f.key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(f.val)) {
                         tv = parseFloat(fuzzyGet(s, f.val)) || 0;
                     } else { tv = parseFloat(f.val.toString().replace('%','')) || 0; }
                     if (f.op === "include") return String(sv || "").includes(f.val);
@@ -392,7 +390,6 @@
                     return v == tv;
                 });
             });
-
             document.getElementById('result-count-badge').innerText = result.length;
             if (sortKey) {
                 result.sort((a, b) => {
@@ -412,14 +409,21 @@
 
         function renderTable(data, activeFilterKeys = []) {
             const thead = document.getElementById('table-head'), tbody = document.getElementById('stock-list');
-            const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量", "5MA", "10MA", "20MA", "60MA"];
+            const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量", "成交量1", "成交量2", "成交量3", "5MA", "10MA", "20MA", "60MA"];
             const tailFixed = ["產業", "經營項目", "概念股"];
             const allPossibleExtras = Object.values(indicatorGroups).flat();
             const actualExtras = showAllExtras ? allPossibleExtras.filter(k => !headFixed.includes(k) && !tailFixed.includes(k)) : [];
             const highlightedExtras = activeFilterKeys.filter(k => !headFixed.includes(k) && !tailFixed.includes(k) && !actualExtras.includes(k));
             const allHeaders = [...headFixed, ...actualExtras, ...highlightedExtras, ...tailFixed];
             
-            thead.innerHTML = `<tr>${allHeaders.map(h => `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black text-center" onclick="handleSort('${h}')">${h} ${sortKey===h?(sortDirection===1?'↑':'↓'):''}</th>`).join('')}</tr>`;
+            thead.innerHTML = `<tr>${allHeaders.map(h => {
+                let displayH = h;
+                if (h === "成交量") displayH = "今日量";
+                else if (h === "成交量1") displayH = "昨日量";
+                else if (h === "成交量2") displayH = "前日量";
+                else if (h === "成交量3") displayH = "大前量";
+                return `<th class="p-4 cursor-pointer hover:bg-slate-200 transition-colors font-black text-center" onclick="handleSort('${h}')">${displayH} ${sortKey===h?(sortDirection===1?'↑':'↓'):''}</th>`;
+            }).join('')}</tr>`;
 
             tbody.innerHTML = data.map(s => {
                 const pctStr = fuzzyGet(s, "漲跌幅").toString();
@@ -429,12 +433,10 @@
                 let nameStyle = "name-badge name-normal";
                 if (pctChange >= 9.5) nameStyle = "name-badge limit-up-premium";
                 else if (pctChange <= -9.5) nameStyle = "name-badge limit-down-premium";
-
                 const rowCells = allHeaders.map(h => {
                     let val = fuzzyGet(s, h);
                     let num = (val !== "" && !isNaN(val.toString().replace('%',''))) ? parseFloat(val.toString().replace('%','')) : 0;
                     const isFilteredCol = activeFilterKeys.includes(h) ? "highlight-filter" : "";
-
                     if (h === "代碼") {
                         const plusBtn = isUnlocked ? `
                             <button onclick="addToWatchlist('${stockId}')" class="text-indigo-500 hover:text-indigo-700 transition-all hover:scale-125 flex items-center justify-center" title="加入監控">
@@ -450,7 +452,6 @@
                         </td>`;
                     }
                     if (h === "價格") return `<td class="p-5 font-black text-indigo-600 italic text-[22px] ${isFilteredCol}">${val || 0}</td>`;
-                    
                     let colorClass = 'text-slate-600';
                     if (h === "漲跌" || h === "漲跌幅" || colorSensitiveFields.includes(h)) {
                         colorClass = (num > 0) ? 'text-red-500' : (num < 0 ? 'text-emerald-500' : 'text-slate-500');
@@ -459,7 +460,6 @@
                         return `<td class="p-5 font-black italic text-center ${colorClass} text-[20px] ${isFilteredCol}">${val || 0}</td>`;
                     }
                     if (h === "經營項目" || h === "概念股") return `<td class="p-5 py-6 wrap-cell text-slate-500 text-[12px] ${isFilteredCol}">${val || '無資料'}</td>`;
-                    
                     if (["5MA", "10MA", "20MA", "60MA"].includes(h)) {
                         let arrow = "";
                         if (num > 0) {
@@ -469,7 +469,10 @@
                         const displayNum = num > 0 ? num.toFixed(2) : "--";
                         return `<td class="p-5 font-bold text-center text-slate-600 text-[15px] ${isFilteredCol}">${displayNum}${arrow}</td>`;
                     }
-                    
+                    if (["5扣", "10扣", "20扣", "60扣"].includes(h)) {
+                         let arrowColor = val === "↑" ? "text-red-500" : (val === "↓" ? "text-emerald-500" : "text-slate-300");
+                         return `<td class="p-5 font-black text-[22px] text-center ${arrowColor} ${isFilteredCol}">${val || '--'}</td>`;
+                    }
                     const cellWeight = colorSensitiveFields.includes(h) ? "font-black" : "font-bold";
                     return `<td class="p-5 ${cellWeight} text-center ${colorClass} ${isFilteredCol}">${val ?? '--'}</td>`;
                 });
