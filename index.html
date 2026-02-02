@@ -335,8 +335,16 @@
             let groups = "";
             for (let g in indicatorGroups) {
                 groups += `<optgroup label="${g}">`;
-                indicatorGroups[g].forEach(i => groups += `<option value="${i}">${i}</option>`);
-                groups += `</optgroup>`;
+        indicatorGroups[g].forEach(i => {
+            let displayName = i;
+            // 🚀 這裡自定義顯示名稱，但不改變 value (確保資料庫讀取正常)
+            if (i === "成交量")  displayName = "成交量 (今日)";
+            if (i === "成交量1") displayName = "成交量 (昨日)";
+            if (i === "成交量2") displayName = "成交量 (前日)";
+            if (i === "成交量3") displayName = "成交量 (大前日)";
+    
+    groups += `<option value="${i}">${displayName}</option>`;
+});                groups += `</optgroup>`;
             }
             row.innerHTML = `<select onchange="updateValueInput(this)" class="indicator-select p-2 border rounded-xl bg-white w-full md:w-64 font-bold outline-none">${groups}</select>
                 <select class="operator-select p-2 border rounded-xl bg-white w-20 text-center font-black"><option value=">=">≥</option><option value="<=">≤</option><option value="==">=</option><option value="include">含</option></select>
