@@ -146,7 +146,7 @@
         let showAllExtras = false, isUnlocked = false, watchlist = []; 
 
         const indicatorGroups = {
-            "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量"],
+            "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量(今日)"],
             "🔍 基礎屬性": ["籌碼力道", "產業", "股本(億)"],
             "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
             "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
@@ -158,9 +158,11 @@
         function fuzzyGet(obj, target) {
             if (!obj) return "";
             if (obj[target] !== undefined) return obj[target];
+            // 針對「成交量(今日)」的模糊對應處理
             const cleanTarget = target.toString().trim().replace(/[ "“”'']/g, "");
             const realKey = Object.keys(obj).find(k => {
                 const cleanK = k.toString().trim().replace(/[ "步“”'']/g, "").replace(/\ufeff/g, "");
+                if (cleanTarget === "成交量(今日)" && cleanK === "成交量") return true;
                 return cleanK === cleanTarget || cleanK.includes(cleanTarget);
             });
             return realKey ? obj[realKey] : "";
@@ -224,7 +226,6 @@
             runFilter(); 
         }
 
-        // 🚀 核心匯出功能 (解鎖限定)
         window.exportWatchlist = function() {
             if (!isUnlocked) return;
             if (watchlist.length === 0) { alert("清單目前為空"); return; }
@@ -238,7 +239,6 @@
             URL.revokeObjectURL(url);
         }
 
-        // 🚀 核心匯入功能 (解鎖限定 + 去重安全檢查)
         window.importWatchlist = function(input) {
             if (!isUnlocked) return;
             const file = input.files[0];
@@ -248,11 +248,8 @@
                 const content = e.target.result;
                 const incomingCodes = content.split(/[,，\s\n\r]+/).map(c => c.trim()).filter(c => c !== "");
                 if (incomingCodes.length === 0) { alert("檔案內容無效"); return; }
-
-                // 過濾重複代號
                 const newCodes = incomingCodes.filter(code => !watchlist.includes(code));
                 if (newCodes.length === 0) { alert("清單中已包含檔案內所有代號"); return; }
-
                 if (confirm(`準備同步匯入 ${newCodes.length} 支股票。是否繼續？`)) {
                     const batch = writeBatch(db);
                     newCodes.forEach(code => {
@@ -297,8 +294,6 @@
                 const s = allStocks.find(item => String(fuzzyGet(item, "代碼")).replace(/[ "]/g, "") === id);
                 if (!s) return "";
                 const price = fuzzyGet(s, "價格"), change = fuzzyGet(s, "漲跌"), pctRaw = fuzzyGet(s, "漲跌幅").toString(), name = fuzzyGet(s, "名稱");
-                
-                // 修正百分比顯示
                 const pctDisplay = pctRaw.includes('%') ? pctRaw : pctRaw + '%';
                 const numChange = parseFloat(change.toString().replace('%','')) || 0;
                 const colorClass = numChange > 0 ? 'text-red-500' : (numChange < 0 ? 'text-emerald-500' : 'text-slate-500');
@@ -351,9 +346,13 @@
             if (key === "價格") {
                 valContainer.innerHTML = `<input list="ma-options" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600 outline-none" placeholder="數字或MA">
                     <datalist id="ma-options"><option value="5MA"><option value="10MA"><option value="20MA"><option value="60MA"></datalist>`;
-            } else if (key === "成交量") {
+            } else if (key === "成交量(今日)") {
                 valContainer.innerHTML = `<input list="vol-options" class="p-2 border rounded-xl bg-white w-full md:w-32 font-black text-indigo-600 outline-none" placeholder="數字或歷史量">
-                    <datalist id="vol-options"><option value="成交量1"><option value="成交量2"><option value="成交量3"></datalist>`;
+                    <datalist id="vol-options">
+                        <option value="昨天">
+                        <option value="前天">
+                        <option value="大前天">
+                    </datalist>`;
             } else if (["籌碼力道", "產業"].includes(key)) {
                 let opts = (uniqueOptions[key] || []).map(o => `<option value="${o}">${o}</option>`).join('');
                 valContainer.innerHTML = `<select class="p-2 border rounded-xl bg-white w-full md:w-48 font-bold text-indigo-600">${opts}</select>`;
@@ -381,11 +380,16 @@
                 return filters.every(f => {
                     if (f.val === "") return true;
                     const sv = fuzzyGet(s, f.key);
-                    // 修正篩選邏輯：移除 % 再轉數字
                     let v = parseFloat(sv.toString().replace('%','')) || 0, tv;
-                    if (["價格", "成交量"].includes(f.key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(f.val)) {
-                        tv = parseFloat(fuzzyGet(s, f.val)) || 0;
+                    
+                    // 修正歷史成交量對應邏輯
+                    const volMapping = { "昨天": "成交量1", "前天": "成交量2", "大前天": "成交量3" };
+                    const mappedVal = volMapping[f.val] || f.val;
+
+                    if (["價格", "成交量(今日)"].includes(f.key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3", "昨天", "前天", "大前天"].includes(mappedVal)) {
+                        tv = parseFloat(fuzzyGet(s, mappedVal)) || 0;
                     } else { tv = parseFloat(f.val.toString().replace('%','')) || 0; }
+                    
                     if (f.op === "include") return String(sv || "").includes(f.val);
                     if (f.op === '>=') return v >= tv;
                     if (f.op === '<=') return v <= tv;
@@ -412,7 +416,7 @@
 
         function renderTable(data, activeFilterKeys = []) {
             const thead = document.getElementById('table-head'), tbody = document.getElementById('stock-list');
-            const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量", "5MA", "10MA", "20MA", "60MA"];
+            const headFixed = ["代碼", "名稱", "價格", "漲跌", "漲跌幅", "成交量(今日)", "5MA", "10MA", "20MA", "60MA"];
             const tailFixed = ["產業", "經營項目", "概念股"];
             const allPossibleExtras = Object.values(indicatorGroups).flat();
             const actualExtras = showAllExtras ? allPossibleExtras.filter(k => !headFixed.includes(k) && !tailFixed.includes(k)) : [];
