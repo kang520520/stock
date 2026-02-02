@@ -335,12 +335,8 @@
             let groups = "";
             for (let g in indicatorGroups) {
                 groups += `<optgroup label="${g}">`;
-                    if (i.includes("成交量")) {
-        if (i === "成交量")  displayName = "成交量 (今日)";
-        else if (i.includes("1")) displayName = "成交量 (昨日)";
-        else if (i.includes("2")) displayName = "成交量 (前日)";
-        else if (i.includes("3")) displayName = "成交量 (大前日)";
-    }               groups += `</optgroup>`;
+                indicatorGroups[g].forEach(i => groups += `<option value="${i}">${i}</option>`);
+                groups += `</optgroup>`;
             }
             row.innerHTML = `<select onchange="updateValueInput(this)" class="indicator-select p-2 border rounded-xl bg-white w-full md:w-64 font-bold outline-none">${groups}</select>
                 <select class="operator-select p-2 border rounded-xl bg-white w-20 text-center font-black"><option value=">=">≥</option><option value="<=">≤</option><option value="==">=</option><option value="include">含</option></select>
