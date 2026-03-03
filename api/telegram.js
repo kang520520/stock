@@ -16,8 +16,10 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const bot = new Telegraf(process.env.TG_TOKEN);
 
+// 暫存使用者設定 (Serverless 環境下僅在執行期間有效)
 let userStates = {}; 
 
+// 2. 選股參數分類
 const GROUPS = {
     "🎯 核心行情": ["價格", "漲跌幅", "成交量(今日)"],
     "💰 籌碼動向": ["外資買賣超", "投信買賣超", "主力連續買賣天數"],
@@ -25,12 +27,9 @@ const GROUPS = {
     "💎 財報回報": ["近5年平均現金殖利率%"]
 };
 
-// 輔助函式：處理 Telegram 特殊字元轉義
-const escapeMarkdown = (text) => {
-    return String(text).replace(/[_*\[\]()~`>#+\-=|{}.!]/g, '\\$&');
-};
-
+// 輔助函式：模擬網頁版的 fuzzyGet
 function fuzzyGet(obj, target) {
+    if (!obj) return "";
     const cleanTarget = target.toString().trim().replace(/[ "“”'']/g, "");
     const realKey = Object.keys(obj).find(k => {
         const cleanK = k.toString().trim().replace(/[ "步“”'']/g, "").replace(/\ufeff/g, "");
@@ -40,6 +39,7 @@ function fuzzyGet(obj, target) {
     return realKey ? obj[realKey] : "";
 }
 
+// 產生選單按鈕
 const makeKeyboard = (userId, group = null) => {
     const params = userStates[userId]?.params || {};
     if (!group) {
@@ -47,12 +47,20 @@ const makeKeyboard = (userId, group = null) => {
         btns.push([Markup.button.callback('🚀 執行選股', 'run'), Markup.button.callback('🧹 清空重置', 'reset')]);
         return Markup.inlineKeyboard(btns);
     }
-    const btns = GROUPS[group].map(p => [Markup.button.callback(`${p}: ${params[p] || '未設'}`, `set_${p}`)]);
+    const btns = GROUPS[group].map(p => {
+        const currentVal = params[p] ? `(已設: ${params[p]})` : '';
+        return [Markup.button.callback(`${p} ${currentVal}`, `set_${p}`)];
+    });
     btns.push([Markup.button.callback('⬅️ 返回主選單', 'main')]);
     return Markup.inlineKeyboard(btns);
 };
 
-bot.start((ctx) => ctx.reply('歡迎使用大雄 Stock Scanner Pro！\n請選擇分類設定參數：', makeKeyboard(ctx.from.id)));
+// --- 指令處理 ---
+bot.start((ctx) => {
+    const userId = ctx.from.id;
+    userStates[userId] = { params: {}, stage: null };
+    return ctx.reply('歡迎使用大雄 Stock Scanner Pro！\n請選擇分類設定參數：', makeKeyboard(userId));
+});
 
 bot.on('callback_query', async (ctx) => {
     const userId = ctx.from.id;
@@ -62,14 +70,18 @@ bot.on('callback_query', async (ctx) => {
     if (data === 'main' || data === 'reset') {
         if (data === 'reset') userStates[userId].params = {};
         await ctx.editMessageText('請選擇分類設定參數：', makeKeyboard(userId));
-    } else if (data.startsWith('menu_')) {
+    } 
+    else if (data.startsWith('menu_')) {
         const g = data.replace('menu_', '');
         await ctx.editMessageText(`正在設定 [${g}]，點擊參數設定門檻：`, makeKeyboard(userId, g));
-    } else if (data.startsWith('set_')) {
-        userStates[userId].stage = data.replace('set_', '');
-        await ctx.reply(`請輸入 [${userStates[userId].stage}] 的門檻值 (僅數字)：`);
-    } else if (data === 'run') {
-        await ctx.reply('🔍 正在連線 Firebase 執行過濾...');
+    } 
+    else if (data.startsWith('set_')) {
+        const target = data.replace('set_', '');
+        userStates[userId].stage = target;
+        await ctx.reply(`請輸入 [${target}] 的門檻值 (僅輸入數字，例如 500)：`);
+    } 
+    else if (data === 'run') {
+        await ctx.reply('🔍 正在連線 Firebase 執行過濾，請稍候...');
         try {
             const snap = await getDocs(collection(db, "stocks"));
             const allStocks = snap.docs.map(d => d.data());
@@ -84,24 +96,23 @@ bot.on('callback_query', async (ctx) => {
                 });
             });
 
-            // 處理結果清單並進行轉義
-            const list = result.slice(0, 10).map(s => {
-                const code = escapeMarkdown(String(fuzzyGet(s, "代碼")).replace(/[ "]/g, ""));
-                const name = escapeMarkdown(fuzzyGet(s, "名稱"));
-                const price = escapeMarkdown(fuzzyGet(s, "價格"));
-                return `• \`${code}\` ${name} \\(${price}\\)`;
+            // 建立結果清單 (純文字格式，避免 Markdown 報錯)
+            const list = result.slice(0, 15).map(s => {
+                const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
+                const name = fuzzyGet(s, "名稱");
+                const price = fuzzyGet(s, "價格");
+                return `• ${code} ${name} (現價: ${price})`;
             }).join('\n');
 
-            const filterDesc = Object.keys(filters).length > 0 
-                ? escapeMarkdown(Object.entries(filters).map(([k, v]) => `${k}>${v}`).join(', ')) 
-                : '無';
+            let report = `🎯 篩選結果 (共 ${result.length} 支)\n`;
+            report += `條件: ${Object.keys(filters).length > 0 ? Object.entries(filters).map(([k, v]) => `${k}>${v}`).join(', ') : '無'}\n\n`;
+            report += list || '❌ 目前無符合條件的股票';
+            report += `\n\n網頁版清單: https://stock-eosin-kappa.vercel.app/`;
 
-            const report = `🎯 *篩選結果 (前10名)*\n條件: ${filterDesc}\n\n${list || '❌ 無符合股票'}\n\n[🔗 回官網看完整列表](https://stock-eosin-kappa.vercel.app/)`;
-
-            await ctx.replyWithMarkdownV2(report);
+            await ctx.reply(report); 
         } catch (e) {
-            console.error(e);
-            await ctx.reply('❌ 發生錯誤，請稍後再試');
+            console.error('Firebase Error:', e);
+            await ctx.reply('❌ 執行選股時發生錯誤，請檢查資料庫連線');
         }
     }
 });
@@ -109,22 +120,24 @@ bot.on('callback_query', async (ctx) => {
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
     if (userStates[userId]?.stage) {
-        userStates[userId].params[userStates[userId].stage] = ctx.message.text;
+        const target = userStates[userId].stage;
+        userStates[userId].params[target] = ctx.message.text;
         userStates[userId].stage = null;
-        await ctx.reply(`✅ 已記錄門檻：${ctx.message.text}`, makeKeyboard(userId));
+        await ctx.reply(`✅ 已記錄 ${target} 門檻：${ctx.message.text}`, makeKeyboard(userId));
     }
 });
 
+// 3. Vercel 必須匯出的入口函式
 export default async function handler(req, res) {
     try {
         if (req.method === 'POST') {
             await bot.handleUpdate(req.body);
             res.status(200).send('OK');
         } else {
-            res.status(200).send('Server is running (Method: ' + req.method + ')');
+            res.status(200).send('Telegram Bot 服務運行中 (GET)');
         }
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Error');
+        console.error('Vercel Handler Error:', err);
+        res.status(500).send('Internal Server Error');
     }
 }
