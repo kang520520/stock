@@ -2,7 +2,7 @@ import { Telegraf, Markup } from 'telegraf';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
-// 1. Firebase 配置
+// 1. Firebase 配置 (對應你的專案)
 const firebaseConfig = {
     apiKey: "AIzaSyDnhwU3IZ3ScrViOLEgOMymXxDK2F0b0_Y",
     authDomain: "stock-9b4fe.firebaseapp.com",
@@ -23,6 +23,11 @@ const GROUPS = {
     "💰 籌碼動向": ["外資買賣超", "投信買賣超", "主力連續買賣天數"],
     "📊 籌碼集中": ["近5日籌碼集中度", "近20日籌碼集中度"],
     "💎 財報回報": ["近5年平均現金殖利率%"]
+};
+
+// 輔助函式：處理 Telegram 特殊字元轉義
+const escapeMarkdown = (text) => {
+    return String(text).replace(/[_*\[\]()~`>#+\-=|{}.!]/g, '\\$&');
 };
 
 function fuzzyGet(obj, target) {
@@ -62,7 +67,7 @@ bot.on('callback_query', async (ctx) => {
         await ctx.editMessageText(`正在設定 [${g}]，點擊參數設定門檻：`, makeKeyboard(userId, g));
     } else if (data.startsWith('set_')) {
         userStates[userId].stage = data.replace('set_', '');
-        await ctx.reply(`請輸入 [${userStates[userId].stage}] 的門檻值（例如 500）：`);
+        await ctx.reply(`請輸入 [${userStates[userId].stage}] 的門檻值 (僅數字)：`);
     } else if (data === 'run') {
         await ctx.reply('🔍 正在連線 Firebase 執行過濾...');
         try {
@@ -79,11 +84,24 @@ bot.on('callback_query', async (ctx) => {
                 });
             });
 
-            const list = result.slice(0, 10).map(s => `• \`${fuzzyGet(s, "代碼")}\` ${fuzzyGet(s, "名稱")} (${fuzzyGet(s, "價格")})`).join('\n');
-            const report = `🎯 *篩選結果 (前10名)*\n條件: ${Object.keys(filters).length > 0 ? Object.entries(filters).map(([k, v]) => `${k}>${v}`).join(', ') : '無'}\n\n${list || '❌ 無符合股票'}\n\n[🔗 回官網看完整列表](https://stock-eosin-kappa.vercel.app/)`;
-            await ctx.replyWithMarkdownV2(report.replace(/\./g, '\\.').replace(/-/g, '\\-').replace(/\%/g, '\\%'));
+            // 處理結果清單並進行轉義
+            const list = result.slice(0, 10).map(s => {
+                const code = escapeMarkdown(String(fuzzyGet(s, "代碼")).replace(/[ "]/g, ""));
+                const name = escapeMarkdown(fuzzyGet(s, "名稱"));
+                const price = escapeMarkdown(fuzzyGet(s, "價格"));
+                return `• \`${code}\` ${name} \\(${price}\\)`;
+            }).join('\n');
+
+            const filterDesc = Object.keys(filters).length > 0 
+                ? escapeMarkdown(Object.entries(filters).map(([k, v]) => `${k}>${v}`).join(', ')) 
+                : '無';
+
+            const report = `🎯 *篩選結果 (前10名)*\n條件: ${filterDesc}\n\n${list || '❌ 無符合股票'}\n\n[🔗 回官網看完整列表](https://stock-eosin-kappa.vercel.app/)`;
+
+            await ctx.replyWithMarkdownV2(report);
         } catch (e) {
-            await ctx.reply('❌ Firebase 讀取失敗：' + e.message);
+            console.error(e);
+            await ctx.reply('❌ 發生錯誤，請稍後再試');
         }
     }
 });
@@ -97,7 +115,6 @@ bot.on('text', async (ctx) => {
     }
 });
 
-// 2. Vercel 需要 export default
 export default async function handler(req, res) {
     try {
         if (req.method === 'POST') {
