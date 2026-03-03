@@ -87,8 +87,13 @@ bot.on('callback_query', async (ctx) => {
         const parts = data.split('_');
         userStates[userId].stage = parts[1];
         userStates[userId].tempOp = parts[2];
-        await ctx.reply(`請輸入 [${parts[1]}] 要 ${parts[2]} 的值：\n(提示: 支援 20MA, 昨天, 或是純數字)`);
-    } else if (data === 'run') {
+        await ctx.reply(`💬 請輸入 [${parts[1]}] 要 ${parts[2]} 的值：\n\n` +
+        `💡 支援格式：\n` +
+        `• 價格可輸入均線：5MA, 10MA, 20MA, 60MA、或數值\n` +
+        `• 成交量：今日(純數值)、昨天, 前天, 大前天\n` +
+        `• 籌碼力道：買壓增加、買壓減緩、賣壓增加、賣壓減緩 (搭配「含」)\n` +
+        `• 產業：請輸入產業名稱 (搭配「含」)\n` +
+        `• 數值：直接輸入純數字`);    } else if (data === 'run') {
         const loading = await ctx.reply('🔍 正在連線 Firebase 過濾資料...');
         try {
             const snap = await getDocs(collection(db, "stocks"));
