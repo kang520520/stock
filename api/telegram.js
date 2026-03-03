@@ -17,11 +17,12 @@ const bot = new Telegraf(process.env.TG_TOKEN);
 
 let userStates = {}; 
 
+// --- 完全同步你的完整選單配置 ---
 const GROUPS = {
     "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量(今日)"],
     "🔍 基礎屬性": ["籌碼力道", "產業", "股本(億)"],
-    "💰 籌碼動向": ["外資買賣超", "投信買賣超", "主力連續買賣天數"],
-    "📊 籌碼集中": ["近5日籌碼集中度", "近20日籌碼集中度"],
+    "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
+    "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
     "💎 財報回報": ["近5年平均現金殖利率%"]
 };
 
@@ -86,9 +87,9 @@ bot.on('callback_query', async (ctx) => {
         const parts = data.split('_');
         userStates[userId].stage = parts[1];
         userStates[userId].tempOp = parts[2];
-        await ctx.reply(`請輸入 [${parts[1]}] 要 ${parts[2]} 的值：`);
+        await ctx.reply(`請輸入 [${parts[1]}] 要 ${parts[2]} 的值：\n(提示: 支援 20MA, 昨天, 或是純數字)`);
     } else if (data === 'run') {
-        await ctx.reply('🔍 正在連線 Firebase 過濾資料...');
+        const loading = await ctx.reply('🔍 正在連線 Firebase 過濾資料...');
         try {
             const snap = await getDocs(collection(db, "stocks"));
             const allStocks = snap.docs.map(d => d.data());
@@ -99,15 +100,18 @@ bot.on('callback_query', async (ctx) => {
                     const config = filters[key];
                     const sv = fuzzyGet(s, key);
                     if (config.op === 'include') return String(sv || "").includes(config.val);
+                    
                     let v = parseFloat(sv.toString().replace(/[%,]/g, '')) || 0;
                     let tv;
-                    const volMapping = { "昨天": "成交量1", "前天": "成交量2" };
+                    const volMapping = { "昨天": "成交量1", "前天": "成交量2", "大前天": "成交量3" };
                     const mappedVal = volMapping[config.val] || config.val;
-                    if (["價格", "成交量(今日)"].includes(key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2"].includes(mappedVal)) {
+                    
+                    if (["價格", "成交量(今日)"].includes(key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(mappedVal)) {
                         tv = parseFloat(fuzzyGet(s, mappedVal)) || 0;
                     } else {
                         tv = parseFloat(config.val.toString().replace(/[^\d.-]/g, '')) || 0;
                     }
+
                     if (config.op === '>=') return v >= tv;
                     if (config.op === '<=') return v <= tv;
                     if (config.op === '==') return v == tv;
@@ -115,7 +119,7 @@ bot.on('callback_query', async (ctx) => {
                 });
             });
 
-            // 構建詳細結果清單
+            // --- 構建包含 產業 的詳細結果清單 ---
             const list = result.slice(0, 15).map((s, idx) => {
                 const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                 const name = fuzzyGet(s, "名稱");
@@ -130,7 +134,7 @@ bot.on('callback_query', async (ctx) => {
             let report = `🎯 篩選結果 (共 ${result.length} 支)\n`;
             report += `條件: ${Object.entries(filters).map(([k, v]) => `${k}${v.op}${v.val}`).join(', ') || '無'}\n\n`;
             report += list || '❌ 無符合股票';
-            report += `\n\n網頁完整版：https://stock-eosin-kappa.vercel.app/`;
+            report += `\n\n🔗 [網頁版清單](https://stock-eosin-kappa.vercel.app/)`;
 
             await ctx.reply(report);
         } catch (e) {
@@ -154,6 +158,6 @@ export default async function (req, res) {
         await bot.handleUpdate(req.body);
         res.status(200).send('OK');
     } else {
-        res.status(200).send('Running');
+        res.status(200).send('Bot Running');
     }
 }
