@@ -17,7 +17,6 @@ const bot = new Telegraf(process.env.TG_TOKEN);
 
 let userStates = {}; 
 
-// --- 完全同步你的完整選單配置 ---
 const GROUPS = {
     "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量(今日)"],
     "🔍 基礎屬性": ["籌碼力道", "產業", "股本(億)"],
@@ -29,7 +28,7 @@ const GROUPS = {
 function fuzzyGet(obj, target) {
     if (!obj) return "";
     if (obj[target] !== undefined) return obj[target];
-    const cleanTarget = target.toString().trim().replace(/[ "“”'']/g, "");
+    const cleanTarget = target.toString().trim().replace(/[ "受“”'']/g, "");
     const realKey = Object.keys(obj).find(k => {
         const cleanK = k.toString().trim().replace(/[ "步“”'']/g, "").replace(/\ufeff/g, "");
         if (cleanTarget === "成交量(今日)" && cleanK === "成交量") return true;
@@ -89,11 +88,12 @@ bot.on('callback_query', async (ctx) => {
         userStates[userId].tempOp = parts[2];
         await ctx.reply(`💬 請輸入 [${parts[1]}] 要 ${parts[2]} 的值：\n\n` +
         `💡 支援格式：\n` +
-        `• 價格可輸入均線：5MA, 10MA, 20MA, 60MA、或數值\n` +
-        `• 成交量：今日(純數值)、昨天, 前天, 大前天\n` +
+        `• 價格支援均線：5MA, 10MA, 20MA, 60MA\n` +
+        `• 成交量：昨天, 前天, 大前天\n` +
         `• 籌碼力道：買壓增加、買壓減緩、賣壓增加、賣壓減緩 (搭配「含」)\n` +
-        `• 產業：請輸入產業名稱 (搭配「含」)\n` +
-        `• 數值：直接輸入純數字`);    } else if (data === 'run') {
+        `• 產業：請輸入名稱 (搭配「含」)\n` +
+        `• 數值：直接輸入純數字`);
+    } else if (data === 'run') {
         const loading = await ctx.reply('🔍 正在連線 Firebase 過濾資料...');
         try {
             const snap = await getDocs(collection(db, "stocks"));
@@ -109,12 +109,13 @@ bot.on('callback_query', async (ctx) => {
                     let v = parseFloat(sv.toString().replace(/[%,]/g, '')) || 0;
                     let tv;
                     const volMapping = { "昨天": "成交量1", "前天": "成交量2", "大前天": "成交量3" };
-                    const mappedVal = volMapping[config.val] || config.val;
+                    const inputVal = config.val.toString().trim();
+                    const mappedVal = volMapping[inputVal] || inputVal.toUpperCase();
                     
                     if (["價格", "成交量(今日)"].includes(key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(mappedVal)) {
                         tv = parseFloat(fuzzyGet(s, mappedVal)) || 0;
                     } else {
-                        tv = parseFloat(config.val.toString().replace(/[^\d.-]/g, '')) || 0;
+                        tv = parseFloat(inputVal.replace(/[^\d.-]/g, '')) || 0;
                     }
 
                     if (config.op === '>=') return v >= tv;
@@ -124,24 +125,37 @@ bot.on('callback_query', async (ctx) => {
                 });
             });
 
-            // --- 構建包含 產業 的詳細結果清單 ---
-            const list = result.slice(0, 15).map((s, idx) => {
-                const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
-                const name = fuzzyGet(s, "名稱");
-                const price = fuzzyGet(s, "價格");
-                const change = fuzzyGet(s, "漲跌");
-                const pct = fuzzyGet(s, "漲跌幅");
-                const industry = fuzzyGet(s, "產業") || "未分類";
-                
-                return `${idx + 1}. [${code}] ${name}\n價: ${price} (${change} / ${pct})\n業: ${industry}\n`;
-            }).join('\n');
+            if (result.length === 0) {
+                await ctx.reply('❌ 無符合股票');
+                return;
+            }
 
-            let report = `🎯 篩選結果 (共 ${result.length} 支)\n`;
-            report += `條件: ${Object.entries(filters).map(([k, v]) => `${k}${v.op}${v.val}`).join(', ') || '無'}\n\n`;
-            report += list || '❌ 無符合股票';
-            report += `\n\n🔗 [網頁版清單](https://stock-eosin-kappa.vercel.app/)`;
+            // --- 修改：分段發送所有結果 ---
+            let header = `🎯 篩選結果 (共 ${result.length} 支)\n`;
+            header += `條件: ${Object.entries(filters).map(([k, v]) => `${k}${v.op}${v.val}`).join(', ') || '無'}`;
+            await ctx.reply(header);
 
-            await ctx.reply(report);
+            const chunkSize = 20; // 設定每 20 支一組
+            for (let i = 0; i < result.length; i += chunkSize) {
+                const chunk = result.slice(i, i + chunkSize);
+                const list = chunk.map((s, idx) => {
+                    const realIdx = i + idx + 1;
+                    const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
+                    const name = fuzzyGet(s, "名稱");
+                    const price = fuzzyGet(s, "價格");
+                    const change = fuzzyGet(s, "漲跌");
+                    const pct = fuzzyGet(s, "漲跌幅");
+                    const industry = fuzzyGet(s, "產業") || "未分類";
+                    return `${realIdx}. [${code}] ${name}\n價: ${price} (${change} / ${pct})\n業: ${industry}\n`;
+                }).join('\n');
+
+                await ctx.reply(list);
+                // 延遲 0.5 秒避免 Rate Limit
+                await new Promise(r => setTimeout(r, 500));
+            }
+
+            await ctx.reply(`🔗 [網頁版清單](https://stock-eosin-kappa.vercel.app/)`);
+
         } catch (e) {
             await ctx.reply('❌ 錯誤：' + e.message);
         }
