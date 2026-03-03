@@ -63,7 +63,7 @@ const makeOperatorKeyboard = (paramName) => {
 
 bot.start((ctx) => {
     userStates[ctx.from.id] = { params: {}, stage: null, tempOp: null };
-    return ctx.reply('歡迎使用大雄 Stock Scanner Pro！\n請選擇分類：', makeKeyboard(ctx.from.id));
+    return ctx.reply('歡迎使用大雄 Stock Scanner Pro！\n直接輸入「代號」或「名稱」快速查詢，\n或選擇分類進行篩選：', makeKeyboard(ctx.from.id));
 });
 
 bot.on('callback_query', async (ctx) => {
@@ -75,7 +75,7 @@ bot.on('callback_query', async (ctx) => {
 
     if (data === 'main' || data === 'reset') {
         if (data === 'reset') userStates[userId].params = {};
-        await ctx.editMessageText('請選擇分類：', makeKeyboard(userId));
+        await ctx.editMessageText('請選擇分類進行條件篩選：', makeKeyboard(userId));
     } else if (data.startsWith('menu_')) {
         const g = data.replace('menu_', '');
         await ctx.editMessageText(`設定 [${g}]，請點擊參數：`, makeKeyboard(userId, g));
@@ -146,19 +146,8 @@ bot.on('callback_query', async (ctx) => {
                     const changeVal = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
                     const pctVal = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
 
-                    // 漲跌描述邏輯
-                    const getChangeStatus = (val) => {
-                        if (val > 0) return "上漲";
-                        if (val < 0) return "下跌";
-                        return "平盤";
-                    };
-
-                    // 漲跌幅描述邏輯 (漲幅/跌幅/平盤)
-                    const getPctStatus = (val) => {
-                        if (val > 0) return "漲幅";
-                        if (val < 0) return "跌幅";
-                        return "平盤";
-                    };
+                    const getChangeStatus = (val) => (val > 0 ? "上漲" : val < 0 ? "下跌" : "平盤");
+                    const getPctStatus = (val) => (val > 0 ? "漲幅" : val < 0 ? "跌幅" : "平盤");
 
                     const absChange = Math.abs(changeVal).toFixed(2);
                     const absPct = Math.abs(pctVal).toFixed(2) + "%";
@@ -172,7 +161,6 @@ bot.on('callback_query', async (ctx) => {
             }
 
             await ctx.reply(`🔗 [網頁版清單](https://stock-eosin-kappa.vercel.app/)`);
-
         } catch (e) {
             await ctx.reply('❌ 錯誤：' + e.message);
         }
@@ -181,11 +169,52 @@ bot.on('callback_query', async (ctx) => {
 
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
+    const text = ctx.message.text.trim();
     const state = userStates[userId];
+
+    // 1. 如果正在設定參數值
     if (state?.stage && state?.tempOp) {
-        state.params[state.stage] = { op: state.tempOp, val: ctx.message.text };
+        state.params[state.stage] = { op: state.tempOp, val: text };
         state.stage = null; state.tempOp = null;
-        await ctx.reply(`✅ 已記錄：${ctx.message.text}`, makeKeyboard(userId));
+        return await ctx.reply(`✅ 已記錄：${text}`, makeKeyboard(userId));
+    }
+
+    // 2. 如果輸入關鍵字喚回選單
+    if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) {
+        userStates[userId] = { params: {}, stage: null, tempOp: null };
+        return ctx.reply('請選擇分類進行篩選：', makeKeyboard(userId));
+    }
+
+    // 3. 執行個股查詢模式
+    const loading = await ctx.reply(`🔍 正在查詢「${text}」...`);
+    try {
+        const snap = await getDocs(collection(db, "stocks"));
+        const searchResult = snap.docs.map(d => d.data()).filter(s => {
+            const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
+            const name = String(fuzzyGet(s, "名稱"));
+            return code.includes(text) || name.includes(text);
+        });
+
+        if (searchResult.length === 0) {
+            return await ctx.reply(`❌ 找不到與「${text}」相關的股票。`);
+        }
+
+        const list = searchResult.slice(0, 10).map((s, idx) => {
+            const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
+            const name = fuzzyGet(s, "名稱");
+            const price = fuzzyGet(s, "價格");
+            const cv = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
+            const pv = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
+            
+            const getChangeStatus = (val) => (val > 0 ? "上漲" : val < 0 ? "下跌" : "平盤");
+            const getPctStatus = (val) => (val > 0 ? "漲幅" : val < 0 ? "跌幅" : "平盤");
+
+            return `${idx + 1}. [${code}] ${name}\n價格: ${price} (${getChangeStatus(cv)}${Math.abs(cv).toFixed(2)} / ${getPctStatus(pv)}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
+        }).join('\n');
+
+        await ctx.reply(`🎯 查詢結果 (顯示前 10 筆)：\n\n${list}`);
+    } catch (e) {
+        await ctx.reply('❌ 查詢出錯：' + e.message);
     }
 });
 
