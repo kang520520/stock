@@ -1,8 +1,8 @@
-const { Telegraf, Markup } = require('telegraf');
-const { initializeApp } = require('firebase/app');
-const { getFirestore, collection, getDocs } = require('firebase/firestore');
+import { Telegraf, Markup } from 'telegraf';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
-// 你的 Firebase 配置 (直接引用自你的原始碼)
+// 1. Firebase 配置
 const firebaseConfig = {
     apiKey: "AIzaSyDnhwU3IZ3ScrViOLEgOMymXxDK2F0b0_Y",
     authDomain: "stock-9b4fe.firebaseapp.com",
@@ -25,7 +25,6 @@ const GROUPS = {
     "💎 財報回報": ["近5年平均現金殖利率%"]
 };
 
-// 複寫你的 fuzzyGet 邏輯
 function fuzzyGet(obj, target) {
     const cleanTarget = target.toString().trim().replace(/[ "“”'']/g, "");
     const realKey = Object.keys(obj).find(k => {
@@ -66,22 +65,26 @@ bot.on('callback_query', async (ctx) => {
         await ctx.reply(`請輸入 [${userStates[userId].stage}] 的門檻值（例如 500）：`);
     } else if (data === 'run') {
         await ctx.reply('🔍 正在連線 Firebase 執行過濾...');
-        const snap = await getDocs(collection(db, "stocks"));
-        const allStocks = snap.docs.map(d => d.data());
-        const filters = userStates[userId].params;
+        try {
+            const snap = await getDocs(collection(db, "stocks"));
+            const allStocks = snap.docs.map(d => d.data());
+            const filters = userStates[userId].params;
 
-        const result = allStocks.filter(s => {
-            return Object.keys(filters).every(key => {
-                const sv = fuzzyGet(s, key);
-                const v = parseFloat(sv.toString().replace('%','')) || 0;
-                const tv = parseFloat(filters[key]) || 0;
-                return v >= tv; 
+            const result = allStocks.filter(s => {
+                return Object.keys(filters).every(key => {
+                    const sv = fuzzyGet(s, key);
+                    const v = parseFloat(sv.toString().replace('%','')) || 0;
+                    const tv = parseFloat(filters[key]) || 0;
+                    return v >= tv; 
+                });
             });
-        });
 
-        const list = result.slice(0, 10).map(s => `• \`${fuzzyGet(s, "代碼")}\` ${fuzzyGet(s, "名稱")} (${fuzzyGet(s, "價格")})`).join('\n');
-        const report = `🎯 *篩選結果 (前10名)*\n條件: ${Object.keys(filters).length > 0 ? Object.entries(filters).map(([k, v]) => `${k}>${v}`).join(', ') : '無'}\n\n${list || '❌ 無符合股票'}\n\n[🔗 回官網看完整列表](${process.env.SITE_URL})`;
-        await ctx.replyWithMarkdownV2(report.replace(/\./g, '\\.').replace(/-/g, '\\-').replace(/\%/g, '\\%'));
+            const list = result.slice(0, 10).map(s => `• \`${fuzzyGet(s, "代碼")}\` ${fuzzyGet(s, "名稱")} (${fuzzyGet(s, "價格")})`).join('\n');
+            const report = `🎯 *篩選結果 (前10名)*\n條件: ${Object.keys(filters).length > 0 ? Object.entries(filters).map(([k, v]) => `${k}>${v}`).join(', ') : '無'}\n\n${list || '❌ 無符合股票'}\n\n[🔗 回官網看完整列表](https://stock-eosin-kappa.vercel.app/)`;
+            await ctx.replyWithMarkdownV2(report.replace(/\./g, '\\.').replace(/-/g, '\\-').replace(/\%/g, '\\%'));
+        } catch (e) {
+            await ctx.reply('❌ Firebase 讀取失敗：' + e.message);
+        }
     }
 });
 
@@ -94,7 +97,17 @@ bot.on('text', async (ctx) => {
     }
 });
 
-module.exports = async (req, res) => {
-    try { await bot.handleUpdate(req.body); res.status(200).send('OK'); } 
-    catch (err) { res.status(500).send('Error'); }
-};
+// 2. Vercel 需要 export default
+export default async function handler(req, res) {
+    try {
+        if (req.method === 'POST') {
+            await bot.handleUpdate(req.body);
+            res.status(200).send('OK');
+        } else {
+            res.status(200).send('Server is running (Method: ' + req.method + ')');
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error');
+    }
+}
