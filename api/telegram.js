@@ -130,12 +130,11 @@ bot.on('callback_query', async (ctx) => {
                 return;
             }
 
-            // --- 修改：分段發送所有結果 ---
             let header = `🎯 篩選結果 (共 ${result.length} 支)\n`;
             header += `條件: ${Object.entries(filters).map(([k, v]) => `${k}${v.op}${v.val}`).join(', ') || '無'}`;
             await ctx.reply(header);
 
-            const chunkSize = 20; // 設定每 20 支一組
+            const chunkSize = 20; 
             for (let i = 0; i < result.length; i += chunkSize) {
                 const chunk = result.slice(i, i + chunkSize);
                 const list = chunk.map((s, idx) => {
@@ -144,32 +143,31 @@ bot.on('callback_query', async (ctx) => {
                     const name = fuzzyGet(s, "名稱");
                     const price = fuzzyGet(s, "價格");
                     
-                    // 解析數值以判斷方向
                     const changeVal = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
                     const pctVal = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
 
-                    // 判斷漲跌文字邏輯
-                    const getStatus = (val) => {
+                    // 漲跌描述邏輯
+                    const getChangeStatus = (val) => {
                         if (val > 0) return "上漲";
                         if (val < 0) return "下跌";
                         return "平盤";
                     };
 
-                    const changeTxt = getStatus(changeVal);
-                    const pctTxt = getStatus(pctVal);
+                    // 漲跌幅描述邏輯 (漲幅/跌幅/平盤)
+                    const getPctStatus = (val) => {
+                        if (val > 0) return "漲幅";
+                        if (val < 0) return "跌幅";
+                        return "平盤";
+                    };
 
-                    // 取得絕對值顯示，避免出現「下跌 -5.00」這種重複負號
                     const absChange = Math.abs(changeVal).toFixed(2);
                     const absPct = Math.abs(pctVal).toFixed(2) + "%";
-
                     const industry = fuzzyGet(s, "產業") || "未分類";
-                    
-                    // 輸出要求的格式
-                    return `${realIdx}. [${code}] ${name}\n價格: ${price} (${changeTxt}${absChange} / ${pctTxt}${absPct})\n產業: ${industry}\n`;
+
+                    return `${realIdx}. [${code}] ${name}\n價格: ${price} (${getChangeStatus(changeVal)}${absChange} / ${getPctStatus(pctVal)}${absPct})\n產業: ${industry}\n`;
                 }).join('\n');
 
                 await ctx.reply(list);
-                // 延遲 0.5 秒避免 Rate Limit
                 await new Promise(r => setTimeout(r, 500));
             }
 
