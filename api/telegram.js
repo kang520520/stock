@@ -63,7 +63,7 @@ const makeOperatorKeyboard = (paramName) => {
 
 bot.start((ctx) => {
     userStates[ctx.from.id] = { params: {}, stage: null, tempOp: null };
-    return ctx.reply('歡迎使用大雄 Stock Scanner Pro！\n請選擇分類：', makeKeyboard(ctx.from.id));
+    return ctx.reply('歡迎使用大雄 Stock Scanner Pro！\n直接輸入「代號」或「名稱」可快速查詢，\n或選擇分類進行條件篩選：', makeKeyboard(ctx.from.id));
 });
 
 bot.on('callback_query', async (ctx) => {
@@ -75,7 +75,7 @@ bot.on('callback_query', async (ctx) => {
 
     if (data === 'main' || data === 'reset') {
         if (data === 'reset') userStates[userId].params = {};
-        await ctx.editMessageText('請選擇分類：', makeKeyboard(userId));
+        await ctx.editMessageText('請選擇分類進行條件篩選：', makeKeyboard(userId));
     } else if (data.startsWith('menu_')) {
         const g = data.replace('menu_', '');
         await ctx.editMessageText(`設定 [${g}]，請點擊參數：`, makeKeyboard(userId, g));
@@ -86,13 +86,7 @@ bot.on('callback_query', async (ctx) => {
         const parts = data.split('_');
         userStates[userId].stage = parts[1];
         userStates[userId].tempOp = parts[2];
-        await ctx.reply(`💬 請輸入 [${parts[1]}] 要 ${parts[2]} 的值：\n\n` +
-        `💡 支援格式：\n` +
-        `• 價格支援均線：5MA, 10MA, 20MA, 60MA\n` +
-        `• 成交量：昨天, 前天, 大前天\n` +
-        `• 籌碼力道：買壓增加、買壓減緩、賣壓增加、賣壓減緩 (搭配「含」)\n` +
-        `• 產業：請輸入名稱 (搭配「含」)\n` +
-        `• 數值：直接輸入純數字`);
+        await ctx.reply(`💬 請輸入 [${parts[1]}] 要 ${parts[2]} 的值：\n\n💡 格式範例：5MA, 昨天, 買壓增加, 或純數字`);
     } else if (data === 'run') {
         const loading = await ctx.reply('🔍 正在連線 Firebase 過濾資料...');
         try {
@@ -115,7 +109,7 @@ bot.on('callback_query', async (ctx) => {
                     if (["價格", "成交量(今日)"].includes(key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3"].includes(mappedVal)) {
                         tv = parseFloat(fuzzyGet(s, mappedVal)) || 0;
                     } else {
-                        tv = parseFloat(inputVal.replace(/[^\d.-]/g, '')) || 0;
+                        tv = parseFloat(inputVal.replace(/[^\d.- —]/g, '')) || 0;
                     }
 
                     if (config.op === '>=') return v >= tv;
@@ -142,23 +136,11 @@ bot.on('callback_query', async (ctx) => {
                     const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                     const name = fuzzyGet(s, "名稱");
                     const price = fuzzyGet(s, "價格");
-                    
                     const changeVal = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
                     const pctVal = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
 
-                    // 漲跌描述邏輯
-                    const getChangeStatus = (val) => {
-                        if (val > 0) return "上漲";
-                        if (val < 0) return "下跌";
-                        return "平盤";
-                    };
-
-                    // 漲跌幅描述邏輯 (漲幅/跌幅/平盤)
-                    const getPctStatus = (val) => {
-                        if (val > 0) return "漲幅";
-                        if (val < 0) return "跌幅";
-                        return "平盤";
-                    };
+                    const getChangeStatus = (val) => (val > 0 ? "上漲" : val < 0 ? "下跌" : "平盤");
+                    const getPctStatus = (val) => (val > 0 ? "漲幅" : val < 0 ? "跌幅" : "平盤");
 
                     const absChange = Math.abs(changeVal).toFixed(2);
                     const absPct = Math.abs(pctVal).toFixed(2) + "%";
@@ -172,7 +154,6 @@ bot.on('callback_query', async (ctx) => {
             }
 
             await ctx.reply(`🔗 [網頁版清單](https://stock-eosin-kappa.vercel.app/)`);
-
         } catch (e) {
             await ctx.reply('❌ 錯誤：' + e.message);
         }
@@ -181,11 +162,53 @@ bot.on('callback_query', async (ctx) => {
 
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
+    const text = ctx.message.text.trim();
     const state = userStates[userId];
+
+    // 分支 1: 如果正在設定參數門檻，則記錄參數值
     if (state?.stage && state?.tempOp) {
-        state.params[state.stage] = { op: state.tempOp, val: ctx.message.text };
+        state.params[state.stage] = { op: state.tempOp, val: text };
         state.stage = null; state.tempOp = null;
-        await ctx.reply(`✅ 已記錄：${ctx.message.text}`, makeKeyboard(userId));
+        return await ctx.reply(`✅ 已記錄：${text}`, makeKeyboard(userId));
+    }
+
+    // 分支 2: 如果沒有正在設定參數，則判定為「查詢個股模式」
+    const loading = await ctx.reply(`🔍 正在查詢「${text}」...`);
+    try {
+        const snap = await getDocs(collection(db, "stocks"));
+        const allStocks = snap.docs.map(d => d.data());
+        
+        // 搜尋邏輯：比對代碼或名稱 (模糊搜尋)
+        const searchResult = allStocks.filter(s => {
+            const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
+            const name = String(fuzzyGet(s, "名稱"));
+            return code.includes(text) || name.includes(text);
+        });
+
+        if (searchResult.length === 0) {
+            return await ctx.reply(`❌ 找不到與「${text}」相關的股票。`);
+        }
+
+        const list = searchResult.slice(0, 10).map((s, idx) => {
+            const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
+            const name = fuzzyGet(s, "名稱");
+            const price = fuzzyGet(s, "價格");
+            const changeVal = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
+            const pctVal = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
+
+            const getChangeStatus = (val) => (val > 0 ? "上漲" : val < 0 ? "下跌" : "平盤");
+            const getPctStatus = (val) => (val > 0 ? "漲幅" : val < 0 ? "跌幅" : "平盤");
+
+            const absChange = Math.abs(changeVal).toFixed(2);
+            const absPct = Math.abs(pctVal).toFixed(2) + "%";
+            const industry = fuzzyGet(s, "產業") || "未分類";
+
+            return `${idx + 1}. [${code}] ${name}\n價格: ${price} (${getChangeStatus(changeVal)}${absChange} / ${getPctStatus(pctVal)}${absPct})\n產業: ${industry}\n`;
+        }).join('\n');
+
+        await ctx.reply(`🎯 查詢結果 (顯示前 10 筆)：\n\n${list}`);
+    } catch (e) {
+        await ctx.reply('❌ 查詢出錯：' + e.message);
     }
 });
 
