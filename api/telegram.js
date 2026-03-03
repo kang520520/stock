@@ -2,7 +2,6 @@ import { Telegraf, Markup } from 'telegraf';
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
-// 1. Firebase 配置
 const firebaseConfig = {
     apiKey: "AIzaSyDnhwU3IZ3ScrViOLEgOMymXxDK2F0b0_Y",
     authDomain: "stock-9b4fe.firebaseapp.com",
@@ -18,16 +17,14 @@ const bot = new Telegraf(process.env.TG_TOKEN);
 
 let userStates = {}; 
 
-// 完全同步你網頁版的分類
 const GROUPS = {
     "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量(今日)"],
     "🔍 基礎屬性": ["籌碼力道", "產業", "股本(億)"],
-    "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "主力連續買賣天數", "主力連續買賣張數"],
-    "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
+    "💰 籌碼動向": ["外資買賣超", "投信買賣超", "主力連續買賣天數"],
+    "📊 籌碼集中": ["近5日籌碼集中度", "近20日籌碼集中度"],
     "💎 財報回報": ["近5年平均現金殖利率%"]
 };
 
-// 移植你網頁版的 fuzzyGet 邏輯
 function fuzzyGet(obj, target) {
     if (!obj) return "";
     if (obj[target] !== undefined) return obj[target];
@@ -48,39 +45,50 @@ const makeKeyboard = (userId, group = null) => {
         return Markup.inlineKeyboard(btns);
     }
     const btns = GROUPS[group].map(p => {
-        const val = params[p] ? ` (${params[p]})` : '';
-        return [Markup.button.callback(`${p}${val}`, `set_${p}`)];
+        const config = params[p];
+        const display = config ? ` (${config.op}${config.val})` : '';
+        return [Markup.button.callback(`${p}${display}`, `set_${p}`)];
     });
     btns.push([Markup.button.callback('⬅️ 返回主選單', 'main')]);
     return Markup.inlineKeyboard(btns);
 };
 
+const makeOperatorKeyboard = (paramName) => {
+    return Markup.inlineKeyboard([
+        [Markup.button.callback('≥ (大於等於)', `op_${paramName}_>=`), Markup.button.callback('≤ (小於等於)', `op_${paramName}_<=`)],
+        [Markup.button.callback('= (等於)', `op_${paramName}_==`), Markup.button.callback('含 (包含)', `op_${paramName}_include`)],
+        [Markup.button.callback('⬅️ 返回', 'main')]
+    ]);
+};
+
 bot.start((ctx) => {
-    userStates[ctx.from.id] = { params: {}, stage: null };
-    return ctx.reply('歡迎使用大雄 Stock Scanner Pro (TG版)！\n請設定篩選門檻：', makeKeyboard(ctx.from.id));
+    userStates[ctx.from.id] = { params: {}, stage: null, tempOp: null };
+    return ctx.reply('歡迎使用大雄 Stock Scanner Pro！\n請選擇分類：', makeKeyboard(ctx.from.id));
 });
 
 bot.on('callback_query', async (ctx) => {
     const userId = ctx.from.id;
     const data = ctx.callbackQuery.data;
-    await ctx.answerCbQuery().catch(() => {}); 
+    await ctx.answerCbQuery().catch(() => {});
 
     if (!userStates[userId]) userStates[userId] = { params: {}, stage: null };
 
     if (data === 'main' || data === 'reset') {
         if (data === 'reset') userStates[userId].params = {};
-        await ctx.editMessageText('請選擇分類設定參數：', makeKeyboard(userId));
+        await ctx.editMessageText('請選擇分類：', makeKeyboard(userId));
     } else if (data.startsWith('menu_')) {
         const g = data.replace('menu_', '');
-        await ctx.editMessageText(`設定 [${g}]，請點擊參數：\n(支援輸入中文數字，如: 500張)`, makeKeyboard(userId, g));
+        await ctx.editMessageText(`設定 [${g}]，請點擊參數：`, makeKeyboard(userId, g));
     } else if (data.startsWith('set_')) {
-        userStates[userId].stage = data.replace('set_', '');
-        let hint = "請輸入數值";
-        if (userStates[userId].stage === "價格") hint = "請輸入數字或 MA (如: 20MA)";
-        if (userStates[userId].stage === "成交量(今日)") hint = "請輸入數字或歷史量 (如: 昨天)";
-        await ctx.reply(`${hint}：`);
+        const param = data.replace('set_', '');
+        await ctx.editMessageText(`請選擇 [${param}] 的條件：`, makeOperatorKeyboard(param));
+    } else if (data.startsWith('op_')) {
+        const parts = data.split('_');
+        userStates[userId].stage = parts[1];
+        userStates[userId].tempOp = parts[2];
+        await ctx.reply(`請輸入 [${parts[1]}] 要 ${parts[2]} 的值：`);
     } else if (data === 'run') {
-        await ctx.reply('🔍 正在連線 Firebase 執行過濾...');
+        await ctx.reply('🔍 正在連線 Firebase 過濾資料...');
         try {
             const snap = await getDocs(collection(db, "stocks"));
             const allStocks = snap.docs.map(d => d.data());
@@ -88,44 +96,41 @@ bot.on('callback_query', async (ctx) => {
 
             const result = allStocks.filter(s => {
                 return Object.keys(filters).every(key => {
-                    const inputVal = filters[key].toString().trim();
-                    if (inputVal === "") return true;
-
+                    const config = filters[key];
                     const sv = fuzzyGet(s, key);
-                    // 1. 處理資料庫數值清理
+                    if (config.op === 'include') return String(sv || "").includes(config.val);
                     let v = parseFloat(sv.toString().replace(/[%,]/g, '')) || 0;
                     let tv;
-
-                    // 2. 移植網頁版特殊對應邏輯 (MA 與 歷史量)
-                    const volMapping = { "昨天": "成交量1", "前天": "成交量2", "大前天": "成交量3" };
-                    const mappedVal = volMapping[inputVal] || inputVal;
-
-                    if (["價格", "成交量(今日)"].includes(key) && 
-                        ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2", "成交量3", "昨天", "前天", "大前天"].includes(mappedVal)) {
+                    const volMapping = { "昨天": "成交量1", "前天": "成交量2" };
+                    const mappedVal = volMapping[config.val] || config.val;
+                    if (["價格", "成交量(今日)"].includes(key) && ["5MA", "10MA", "20MA", "60MA", "成交量1", "成交量2"].includes(mappedVal)) {
                         tv = parseFloat(fuzzyGet(s, mappedVal)) || 0;
                     } else {
-                        // 3. 強化：自動過濾掉中英文，只留數字
-                        const cleanInput = inputVal.replace(/[^\d.-]/g, '');
-                        tv = parseFloat(cleanInput) || 0;
+                        tv = parseFloat(config.val.toString().replace(/[^\d.-]/g, '')) || 0;
                     }
-                    
-                    // 預設採用網頁版的 >= 邏輯
-                    return v >= tv; 
+                    if (config.op === '>=') return v >= tv;
+                    if (config.op === '<=') return v <= tv;
+                    if (config.op === '==') return v == tv;
+                    return true;
                 });
             });
 
-            const list = result.slice(0, 15).map(s => {
+            // 構建詳細結果清單
+            const list = result.slice(0, 15).map((s, idx) => {
                 const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                 const name = fuzzyGet(s, "名稱");
                 const price = fuzzyGet(s, "價格");
-                const change = fuzzyGet(s, "漲跌幅");
-                return `• \`${code}\` ${name} (${price}) [${change}]`;
+                const change = fuzzyGet(s, "漲跌");
+                const pct = fuzzyGet(s, "漲跌幅");
+                const industry = fuzzyGet(s, "產業") || "未分類";
+                
+                return `${idx + 1}. [${code}] ${name}\n價: ${price} (${change} / ${pct})\n業: ${industry}\n`;
             }).join('\n');
 
             let report = `🎯 篩選結果 (共 ${result.length} 支)\n`;
-            report += `條件: ${Object.entries(filters).map(([k, v]) => `${k}>${v}`).join(', ') || '無'}\n\n`;
+            report += `條件: ${Object.entries(filters).map(([k, v]) => `${k}${v.op}${v.val}`).join(', ') || '無'}\n\n`;
             report += list || '❌ 無符合股票';
-            report += `\n\n🔗 [點我回官網查看完整列表](https://stock-eosin-kappa.vercel.app/)`;
+            report += `\n\n網頁完整版：https://stock-eosin-kappa.vercel.app/`;
 
             await ctx.reply(report);
         } catch (e) {
@@ -136,11 +141,11 @@ bot.on('callback_query', async (ctx) => {
 
 bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
-    if (userStates[userId]?.stage) {
-        const target = userStates[userId].stage;
-        userStates[userId].params[target] = ctx.message.text;
-        userStates[userId].stage = null;
-        await ctx.reply(`✅ 已記錄 ${target}：${ctx.message.text}`, makeKeyboard(userId));
+    const state = userStates[userId];
+    if (state?.stage && state?.tempOp) {
+        state.params[state.stage] = { op: state.tempOp, val: ctx.message.text };
+        state.stage = null; state.tempOp = null;
+        await ctx.reply(`✅ 已記錄：${ctx.message.text}`, makeKeyboard(userId));
     }
 });
 
