@@ -143,10 +143,29 @@ bot.on('callback_query', async (ctx) => {
                     const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                     const name = fuzzyGet(s, "名稱");
                     const price = fuzzyGet(s, "價格");
-                    const change = fuzzyGet(s, "漲跌");
-                    const pct = fuzzyGet(s, "漲跌幅");
+                    
+                    // 解析數值以判斷方向
+                    const changeVal = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
+                    const pctVal = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
+
+                    // 判斷漲跌文字邏輯
+                    const getStatus = (val) => {
+                        if (val > 0) return "上漲";
+                        if (val < 0) return "下跌";
+                        return "平盤";
+                    };
+
+                    const changeTxt = getStatus(changeVal);
+                    const pctTxt = getStatus(pctVal);
+
+                    // 取得絕對值顯示，避免出現「下跌 -5.00」這種重複負號
+                    const absChange = Math.abs(changeVal).toFixed(2);
+                    const absPct = Math.abs(pctVal).toFixed(2) + "%";
+
                     const industry = fuzzyGet(s, "產業") || "未分類";
-                    return `${realIdx}. [${code}] ${name}\n價: ${price} (${change} / ${pct})\n業: ${industry}\n`;
+                    
+                    // 輸出要求的格式
+                    return `${realIdx}. [${code}] ${name}\n價格: ${price} (${changeTxt}${absChange} / ${pctTxt}${absPct})\n產業: ${industry}\n`;
                 }).join('\n');
 
                 await ctx.reply(list);
