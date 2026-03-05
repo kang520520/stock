@@ -1,6 +1,6 @@
 import { Telegraf, Markup } from 'telegraf';
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, query, limit } from 'firebase/firestore';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
 
 const firebaseConfig = {
     apiKey: "AIzaSyDnhwU3IZ3ScrViOLEgOMymXxDK2F0b0_Y",
@@ -52,6 +52,7 @@ function fuzzyGet(obj, target) {
     return realKey ? obj[realKey] : "";
 }
 
+// 💡 強化後的鍵盤產生器：顯示 ✅ 方塊
 const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     const state = userStates[userId];
     const selected = state.tempSelected || [];
@@ -63,6 +64,7 @@ const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
         const options = subGroup ? INDUSTRY_GROUPS[subGroup] : QUICK_OPTIONS[param];
         btns = options.map(opt => {
             const isSel = selected.includes(opt);
+            // 這裡會根據選取狀態加上 ✅
             return [Markup.button.callback(`${isSel ? '✅ ' : ''}${opt}`, `toggle_${opt}`)];
         });
         btns.push([Markup.button.callback('✨ 確認送出', 'confirm_multi')]);
@@ -114,7 +116,6 @@ bot.on('callback_query', async (ctx) => {
     if (!userStates[userId]) userStates[userId] = { params: [], stage: null, tempSelected: [] };
     const state = userStates[userId];
     
-    // 預先回應 callback 防止轉圈圈
     await ctx.answerCbQuery().catch(() => {});
 
     try {
@@ -146,6 +147,7 @@ bot.on('callback_query', async (ctx) => {
         } 
         else if (data.startsWith('indgroup_')) {
             const groupName = data.replace('indgroup_', '');
+            // 在訊息中暫存目前的分組名稱，以便切換 ✅ 時抓取
             await ctx.editMessageText(`設定 [${groupName}] (可多選)：`, makeMultiSelectKeyboard(userId, "產業", groupName));
         }
         else if (data.startsWith('op_')) {
@@ -161,7 +163,14 @@ bot.on('callback_query', async (ctx) => {
             const opt = data.replace('toggle_', '');
             if (!state.tempSelected.includes(opt)) state.tempSelected.push(opt);
             else state.tempSelected = state.tempSelected.filter(i => i !== opt);
-            await ctx.editMessageReplyMarkup(ctx.callbackQuery.message.reply_markup);
+            
+            // 💡 取得目前選單的子群組（從訊息文字中判斷）
+            const currentMsgText = ctx.callbackQuery.message.text;
+            const subGroupMatch = currentMsgText.match(/設定 \[(.*?)\]/);
+            const subGroup = subGroupMatch ? subGroupMatch[1] : null;
+
+            // 僅更新按鈕部分，達成 ✅ 打勾效果
+            await ctx.editMessageReplyMarkup(makeMultiSelectKeyboard(userId, state.stage === "產業" ? "產業" : state.stage, subGroup).reply_markup);
         } 
         else if (data === 'confirm_multi') {
             if (state.tempSelected.length === 0) return await ctx.reply('⚠️ 請至少勾選一個項目！');
@@ -252,7 +261,6 @@ bot.on('text', async (ctx) => {
         
         await ctx.reply(`🔍 正在查詢「${query}」...`);
         try {
-            // 個股查詢也限制一下返回量，提升速度
             const snap = await getDocs(collection(db, "stocks"));
             const res = snap.docs.map(d => d.data()).filter(s => 
                 String(fuzzyGet(s, "代碼")).includes(query) || String(fuzzyGet(s, "名稱")).includes(query)
@@ -279,7 +287,7 @@ export default async function (req, res) {
             if (!res.headersSent) res.status(200).send('OK');
         } catch (err) {
             console.error(err);
-            if (!res.headersSent) res.status(200).send('OK'); // 強制結束請求
+            if (!res.headersSent) res.status(200).send('OK');
         }
     } else {
         res.status(200).send('Bot Running');
