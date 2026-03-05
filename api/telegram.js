@@ -19,7 +19,7 @@ let userStates = {};
 
 const GROUPS = {
     "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量(今日)"],
-    "🔍 基礎屬性": ["股本(億)"], // 💡 籌碼力道已移出
+    "🔍 基礎屬性": ["股本(億)"], 
     "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
     "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
     "💎 財報回報": ["近5年平均現金殖利率%"]
@@ -62,15 +62,12 @@ const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     } else {
         const options = subGroup ? INDUSTRY_GROUPS[subGroup] : QUICK_OPTIONS[param];
         btns = options.map(opt => {
-            // 💡 產業或籌碼力道改為單選邏輯 (不顯示 ✅，callback 改為 pick_)
             if (param === "產業" || param === "籌碼力道") {
                 return [Markup.button.callback(opt, `pick_${opt}`)];
             }
             const isSel = selected.includes(opt);
             return [Markup.button.callback(`${isSel ? '✅ ' : ''}${opt}`, `toggle_${opt}`)];
         });
-        
-        // 只有非單選項目（價格、成交量）才顯示「確認送出」
         if (param !== "產業" && param !== "籌碼力道") {
             btns.push([Markup.button.callback('✨ 確認送出', 'confirm_multi')]);
         }
@@ -87,16 +84,12 @@ const makeKeyboard = (userId, group = null) => {
     const filters = userStates[userId]?.params || [];
     if (!group) {
         const btns = Object.keys(GROUPS).map(g => [Markup.button.callback(g, `menu_${g}`)]);
-        
-        // 💡 主選單獨立插入「產業專區」與「籌碼力道」
         const indCount = filters.filter(f => f.key === "產業").length;
         const forceCount = filters.filter(f => f.key === "籌碼力道").length;
-        
         btns.push([
             Markup.button.callback(`🏭 產業專區${indCount > 0 ? ` [${indCount}]` : ''}`, 'set_產業'),
             Markup.button.callback(`⚡ 籌碼力道${forceCount > 0 ? ` [${forceCount}]` : ''}`, 'set_籌碼力道')
         ]);
-        
         const total = filters.length > 0 ? ` (${filters.length}項)` : '';
         if (filters.length > 0) btns.push([Markup.button.callback('📋 查看 / 刪除個別條件', 'view_filters')]);
         btns.push([Markup.button.callback(`🚀 執行選股${total}`, 'run'), Markup.button.callback('🧹 全部清空', 'reset')]);
@@ -129,7 +122,6 @@ bot.on('callback_query', async (ctx) => {
     const data = ctx.callbackQuery.data;
     if (!userStates[userId]) userStates[userId] = { params: [], stage: null, tempSelected: [] };
     const state = userStates[userId];
-    
     await ctx.answerCbQuery().catch(() => {});
 
     try {
@@ -151,8 +143,7 @@ bot.on('callback_query', async (ctx) => {
             state.stage = param; state.tempSelected = [];
             if (param === "產業" || param === "籌碼力道") {
                 state.tempOp = "include";
-                const text = param === "產業" ? "請選擇產業大類：" : "請選擇籌碼力道：";
-                await ctx.editMessageText(text, makeMultiSelectKeyboard(userId, param));
+                await ctx.editMessageText(`請選擇 [${param}]：`, makeMultiSelectKeyboard(userId, param));
             } else {
                 await ctx.editMessageText(`請選擇 [${param}] 的條件：`, makeOperatorKeyboard(param));
             }
@@ -161,12 +152,15 @@ bot.on('callback_query', async (ctx) => {
             const groupName = data.replace('indgroup_', '');
             await ctx.editMessageText(`設定 [${groupName}]：`, makeMultiSelectKeyboard(userId, "產業", groupName));
         }
-        // 💡 處理單選項目 (產業與籌碼力道)
+        // 💡 處理單選覆蓋邏輯 (產業與籌碼力道)
         else if (data.startsWith('pick_')) {
             const val = data.replace('pick_', '');
+            // 🚀 核心修改：先過濾掉該類別(stage)舊有的條件，達成覆蓋效果
+            state.params = state.params.filter(f => f.key !== state.stage);
             state.params.push({ key: state.stage, op: state.tempOp, val: val });
+            const currentStageName = state.stage;
             state.stage = null;
-            await ctx.reply(`✅ 已新增：${val}`, makeKeyboard(userId));
+            await ctx.reply(`✅ [${currentStageName}] 已更新為：${val}`, makeKeyboard(userId));
         }
         else if (data.startsWith('op_')) {
             const parts = data.split('_');
@@ -181,11 +175,9 @@ bot.on('callback_query', async (ctx) => {
             const opt = data.replace('toggle_', '');
             if (!state.tempSelected.includes(opt)) state.tempSelected.push(opt);
             else state.tempSelected = state.tempSelected.filter(i => i !== opt);
-            
             const currentMsgText = ctx.callbackQuery.message.text;
             const subGroupMatch = currentMsgText.match(/設定 \[(.*?)\]/);
             const subGroup = subGroupMatch ? subGroupMatch[1] : null;
-
             await ctx.editMessageReplyMarkup(makeMultiSelectKeyboard(userId, state.stage, subGroup).reply_markup);
         } 
         else if (data === 'confirm_multi') {
@@ -205,7 +197,6 @@ bot.on('callback_query', async (ctx) => {
         else if (data === 'run') {
             if (state.params.length === 0) return await ctx.reply('⚠️ 攔截執行：您目前尚未設定任何條件！');
             const loadingMsg = await ctx.reply('🔍 正在連線 Firebase 過濾資料，請稍候...');
-            
             try {
                 const snap = await getDocs(collection(db, "stocks"));
                 const allStocks = snap.docs.map(d => d.data());
@@ -220,16 +211,13 @@ bot.on('callback_query', async (ctx) => {
                              ? parseFloat(fuzzyGet(s, mv)) || 0 : parseFloat(f.val.replace(/[^\d.-]/g, '')) || 0;
                     return f.op==='>=' ? v>=tv : f.op==='<=' ? v<=tv : v==tv;
                 }));
-
                 if (result.length === 0) {
                     await ctx.reply('❌ 無符合股票');
                     return;
                 }
-
                 let header = `🎯 篩選結果 (共 ${result.length} 支)\n`;
                 header += `條件: ${filters.map(f => `${f.key}${f.op}${f.val}`).join(', ') || '無'}`;
                 await ctx.reply(header);
-
                 const chunkSize = 20; 
                 for (let i = 0; i < result.length; i += chunkSize) {
                     const chunk = result.slice(i, i + chunkSize);
@@ -259,22 +247,23 @@ bot.on('text', async (ctx) => {
     const text = ctx.message.text.trim();
     if (!userStates[userId]) userStates[userId] = { params: [], stage: null };
     const state = userStates[userId];
-
     if (state.stage) {
+        // 🚀 手動輸入時也套用單選覆蓋邏輯 (若目前的類別是產業或籌碼力道)
+        if (state.stage === "產業" || state.stage === "籌碼力道") {
+            state.params = state.params.filter(f => f.key !== state.stage);
+        }
         state.params.push({ key: state.stage, op: state.tempOp, val: text });
-        state.stage = null;
-        return await ctx.reply(`✅ 已新增：${text}`, makeKeyboard(userId));
+        const currentStageName = state.stage;
+        state.stage = null; state.tempOp = null;
+        return await ctx.reply(`✅ [${currentStageName}] 已更新為：${text}`, makeKeyboard(userId));
     }
-
     if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) {
         userStates[userId] = { params: [], stage: null, tempOp: null, tempSelected: [] };
         return ctx.reply('請選擇分類進行篩選：', makeKeyboard(userId));
     }
-
     if (text.toLowerCase().startsWith('p')) {
         const query = text.substring(1).trim();
         if (!query) return ctx.reply('💡 請輸入代號，例如 P2330');
-        
         await ctx.reply(`🔍 正在查詢「${query}」...`);
         try {
             const snap = await getDocs(collection(db, "stocks"));
@@ -282,7 +271,6 @@ bot.on('text', async (ctx) => {
                 String(fuzzyGet(s, "代碼")).includes(query) || String(fuzzyGet(s, "名稱")).includes(query)
             );
             if (res.length === 0) return await ctx.reply(`❌ 找不到與「${query}」相關的股票。`);
-            
             const list = res.slice(0, 10).map((s, idx) => {
                 const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                 const cv = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
@@ -292,7 +280,7 @@ bot.on('text', async (ctx) => {
                 return `${idx + 1}. [${code}] ${fuzzyGet(s, "名稱")}\n價格: ${fuzzyGet(s,"價格")} (${getS(cv)}${Math.abs(cv).toFixed(2)} / ${getP(pv)}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
             }).join('\n');
             await ctx.reply(`🎯 查詢結果 ：\n${list}`);
-        } catch (e) { await ctx.reply('❌ 查詢出錯，資料庫連線過載。'); }
+        } catch (e) { await ctx.reply('❌ 查詢出錯。'); }
     }
 });
 
@@ -302,7 +290,6 @@ export default async function (req, res) {
             await bot.handleUpdate(req.body);
             if (!res.headersSent) res.status(200).send('OK');
         } catch (err) {
-            console.error(err);
             if (!res.headersSent) res.status(200).send('OK');
         }
     } else {
