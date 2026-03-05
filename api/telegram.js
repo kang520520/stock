@@ -52,7 +52,7 @@ function fuzzyGet(obj, target) {
     return realKey ? obj[realKey] : "";
 }
 
-// 💡 核心修正：使用 HTML 標籤包裹連結，確保 App Scheme 被辨識
+// 💡 修正後的連結產生邏輯：使用絕對路徑並確保 HTML 標記乾淨
 const getStockItemStringHTML = (s, idx, offset) => {
     const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
     const cv = parseFloat(fuzzyGet(s, "漲跌")) || 0;
@@ -60,13 +60,14 @@ const getStockItemStringHTML = (s, idx, offset) => {
     
     // Yahoo 網頁連結
     const yahooUrl = `https://tw.stock.yahoo.com/quote/${code}/technical-analysis`;
-    // 籌碼 K 線 App 深度連結
+    
+    // 🚀 籌碼 K 線 App 深度連結 (請確認手機已安裝 App)
     const appUrl = `cmchipk://stock/${code}`;
     
-    const trend = cv > 0 ? '上漲' : '下跌';
-    const pctStr = pv > 0 ? '漲幅' : '跌幅';
+    const trend = cv > 0 ? '上漲' : (cv < 0 ? '下跌' : '平盤');
+    const pctStr = pv > 0 ? '漲幅' : (pv < 0 ? '跌幅' : '平盤');
 
-    // 🚀 改用 HTML 語法：<a href="URL">文字</a>
+    // 使用 HTML 格式，將代號加粗並套用 App 連結
     return `${offset + idx + 1}. <a href="${appUrl}"><b>${code}</b></a> <a href="${yahooUrl}">[YAHOO]</a> ${fuzzyGet(s, "名稱")}\n價格: ${fuzzyGet(s, "價格")} (${trend}${Math.abs(cv).toFixed(2)} / ${pctStr}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
 };
 
@@ -200,7 +201,7 @@ bot.on('callback_query', async (ctx) => {
             await ctx.editMessageText('已更新條件：', makeKeyboard(userId));
         } 
         else if (data === 'run') {
-            if (state.params.length === 0) return await ctx.reply('⚠️ 攔截執行：尚未設定條件！');
+            if (state.params.length === 0) return await ctx.reply('⚠️ 尚未設定條件！');
             await ctx.reply('🔍 執行過濾中...');
             try {
                 const snap = await getDocs(collection(db, "stocks"));
@@ -224,7 +225,6 @@ bot.on('callback_query', async (ctx) => {
                 for (let i = 0; i < result.length; i += chunkSize) {
                     const chunk = result.slice(i, i + chunkSize);
                     const list = chunk.map((s, idx) => getStockItemStringHTML(s, idx, i)).join('\n');
-                    // 💡 關鍵：parse_mode 使用 HTML
                     await ctx.reply(list, { parse_mode: 'HTML', disable_web_page_preview: true });
                     await new Promise(r => setTimeout(r, 500));
                 }
@@ -246,9 +246,7 @@ bot.on('text', async (ctx) => {
         return await ctx.reply(`✅ 已更新。`, makeKeyboard(userId));
     }
 
-    if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) {
-        return ctx.reply('請選擇分類：', makeKeyboard(userId));
-    }
+    if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) return ctx.reply('請選擇分類：', makeKeyboard(userId));
 
     if (text.toLowerCase().startsWith('p')) {
         const query = text.substring(1).trim();
