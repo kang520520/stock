@@ -19,7 +19,7 @@ let userStates = {};
 
 const GROUPS = {
     "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量(今日)"],
-    "🔍 基礎屬性": ["籌碼力道", "股本(億)"],
+    "🔍 基礎屬性": ["股本(億)"], // 💡 籌碼力道已移出
     "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
     "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
     "💎 財報回報": ["近5年平均現金殖利率%"]
@@ -62,16 +62,16 @@ const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     } else {
         const options = subGroup ? INDUSTRY_GROUPS[subGroup] : QUICK_OPTIONS[param];
         btns = options.map(opt => {
-            if (param === "產業") {
-                // 💡 產業改為單選，點擊發送 pick 指令
+            // 💡 產業或籌碼力道改為單選邏輯 (不顯示 ✅，callback 改為 pick_)
+            if (param === "產業" || param === "籌碼力道") {
                 return [Markup.button.callback(opt, `pick_${opt}`)];
             }
             const isSel = selected.includes(opt);
             return [Markup.button.callback(`${isSel ? '✅ ' : ''}${opt}`, `toggle_${opt}`)];
         });
         
-        // 只有非產業的參數才需要「確認送出」按鈕
-        if (param !== "產業") {
+        // 只有非單選項目（價格、成交量）才顯示「確認送出」
+        if (param !== "產業" && param !== "籌碼力道") {
             btns.push([Markup.button.callback('✨ 確認送出', 'confirm_multi')]);
         }
     }
@@ -87,8 +87,16 @@ const makeKeyboard = (userId, group = null) => {
     const filters = userStates[userId]?.params || [];
     if (!group) {
         const btns = Object.keys(GROUPS).map(g => [Markup.button.callback(g, `menu_${g}`)]);
+        
+        // 💡 主選單獨立插入「產業專區」與「籌碼力道」
         const indCount = filters.filter(f => f.key === "產業").length;
-        btns.push([Markup.button.callback(`🏭 產業專區${indCount > 0 ? ` [${indCount}項]` : ''}`, 'set_產業')]);
+        const forceCount = filters.filter(f => f.key === "籌碼力道").length;
+        
+        btns.push([
+            Markup.button.callback(`🏭 產業專區${indCount > 0 ? ` [${indCount}]` : ''}`, 'set_產業'),
+            Markup.button.callback(`⚡ 籌碼力道${forceCount > 0 ? ` [${forceCount}]` : ''}`, 'set_籌碼力道')
+        ]);
+        
         const total = filters.length > 0 ? ` (${filters.length}項)` : '';
         if (filters.length > 0) btns.push([Markup.button.callback('📋 查看 / 刪除個別條件', 'view_filters')]);
         btns.push([Markup.button.callback(`🚀 執行選股${total}`, 'run'), Markup.button.callback('🧹 全部清空', 'reset')]);
@@ -141,19 +149,24 @@ bot.on('callback_query', async (ctx) => {
         else if (data.startsWith('set_')) {
             const param = data.replace('set_', '');
             state.stage = param; state.tempSelected = [];
-            if (param === "產業") {
+            if (param === "產業" || param === "籌碼力道") {
                 state.tempOp = "include";
-                await ctx.editMessageText(`請先選擇「產業大類」：`, makeMultiSelectKeyboard(userId, param));
-            } else if (param === "籌碼力道") {
-                state.tempOp = "include";
-                await ctx.editMessageText(`請勾選 [${param}] (可多選)：`, makeMultiSelectKeyboard(userId, param));
+                const text = param === "產業" ? "請選擇產業大類：" : "請選擇籌碼力道：";
+                await ctx.editMessageText(text, makeMultiSelectKeyboard(userId, param));
             } else {
                 await ctx.editMessageText(`請選擇 [${param}] 的條件：`, makeOperatorKeyboard(param));
             }
         } 
         else if (data.startsWith('indgroup_')) {
             const groupName = data.replace('indgroup_', '');
-            await ctx.editMessageText(`設定 [${groupName}] (單選)：`, makeMultiSelectKeyboard(userId, "產業", groupName));
+            await ctx.editMessageText(`設定 [${groupName}]：`, makeMultiSelectKeyboard(userId, "產業", groupName));
+        }
+        // 💡 處理單選項目 (產業與籌碼力道)
+        else if (data.startsWith('pick_')) {
+            const val = data.replace('pick_', '');
+            state.params.push({ key: state.stage, op: state.tempOp, val: val });
+            state.stage = null;
+            await ctx.reply(`✅ 已新增：${val}`, makeKeyboard(userId));
         }
         else if (data.startsWith('op_')) {
             const parts = data.split('_');
@@ -175,19 +188,12 @@ bot.on('callback_query', async (ctx) => {
 
             await ctx.editMessageReplyMarkup(makeMultiSelectKeyboard(userId, state.stage, subGroup).reply_markup);
         } 
-        else if (data.startsWith('pick_')) {
-            // 💡 處理產業單選：選完直接存入並返回
-            const opt = data.replace('pick_', '');
-            state.params.push({ key: "產業", op: "include", val: opt });
-            state.stage = null;
-            await ctx.reply(`✅ 已新增產業條件：${opt}`, makeKeyboard(userId));
-        }
         else if (data === 'confirm_multi') {
             if (state.tempSelected.length === 0) return await ctx.reply('⚠️ 請至少勾選一個項目！');
             state.tempSelected.forEach(v => state.params.push({ key: state.stage, op: state.tempOp, val: v }));
             const summary = state.tempSelected.join(', ');
             state.tempSelected = []; state.stage = null;
-            await ctx.reply(`✅ 已新增：${summary}`, makeKeyboard(userId));
+            await ctx.reply(`✅ 已批次新增：${summary}`, makeKeyboard(userId));
         }
         else if (data === 'manual_input') {
             await ctx.reply(`💬 請輸入 [${state.stage}] 的自定義內容：`);
