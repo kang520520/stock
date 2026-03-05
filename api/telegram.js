@@ -55,11 +55,19 @@ function fuzzyGet(obj, target) {
 // 產生個股項目字串 (含 App 與 Yahoo 連結)
 const getStockItemString = (s, idx, offset) => {
     const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
+    const name = fuzzyGet(s, "名稱");
+    const price = fuzzyGet(s, "價格");
     const cv = parseFloat(fuzzyGet(s, "漲跌")) || 0;
     const pv = parseFloat(fuzzyGet(s, "漲跌幅")) || 0;
-    const techUrl = `https://tw.stock.yahoo.com/quote/${code}/technical-analysis`;
+    
+    // 連結設定：代號連至籌碼K線，YAHOO連至網頁
     const appUrl = `cmchipk://stock/${code}`;
-    return `${offset + idx + 1}. [${code}](${appUrl}) [YAHOO](${techUrl}) ${fuzzyGet(s, "名稱")}\n價格: ${fuzzyGet(s, "價格")} (${cv > 0 ? '上漲' : '下跌'}${Math.abs(cv).toFixed(2)} / ${pv > 0 ? '漲幅' : '跌幅'}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
+    const yahooUrl = `https://tw.stock.yahoo.com/quote/${code}/technical-analysis`;
+    
+    const getS = (v) => (v > 0 ? "上漲" : v < 0 ? "下跌" : "平盤");
+    const getP = (v) => (v > 0 ? "漲幅" : v < 0 ? "跌幅" : "平盤");
+
+    return `${offset + idx + 1}. [${code}](${appUrl}) [YAHOO](${yahooUrl}) ${name}\n價格: ${price} (${getS(cv)}${Math.abs(cv).toFixed(2)} / ${getP(pv)}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
 };
 
 const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
@@ -164,6 +172,7 @@ bot.on('callback_query', async (ctx) => {
         }
         else if (data.startsWith('pick_')) {
             const val = data.replace('pick_', '');
+            // 💡 覆蓋舊選項邏輯
             state.params = state.params.filter(f => f.key !== state.stage);
             state.params.push({ key: state.stage, op: state.tempOp, val: val });
             const currentStageName = state.stage;
@@ -245,6 +254,7 @@ bot.on('text', async (ctx) => {
     const state = userStates[userId];
 
     if (state.stage) {
+        // 💡 手動輸入時也套用單選覆蓋邏輯
         if (state.stage === "產業" || state.stage === "籌碼力道") state.params = state.params.filter(f => f.key !== state.stage);
         state.params.push({ key: state.stage, op: state.tempOp, val: text });
         const currentStageName = state.stage;
@@ -266,11 +276,11 @@ bot.on('text', async (ctx) => {
             const res = snap.docs.map(d => d.data()).filter(s => 
                 String(fuzzyGet(s, "代碼")).includes(query) || String(fuzzyGet(s, "名稱")).includes(query)
             );
-            if (res.length === 0) return await ctx.reply(`❌ 找不到與「${query}」相關的股票。`);
+            if (res.length === 0) return await ctx.reply(`❌ 找不到相關股票。`);
             
             const list = res.slice(0, 10).map((s, idx) => getStockItemString(s, idx, 0)).join('\n');
             await ctx.reply(`🎯 查詢結果 ：\n${list}`, { parse_mode: 'Markdown', disable_web_page_preview: true });
-        } catch (e) { await ctx.reply('❌ 查詢出錯，資料庫連線過載。'); }
+        } catch (e) { await ctx.reply('❌ 查詢出錯。'); }
     }
 });
 
