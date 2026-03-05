@@ -52,7 +52,6 @@ function fuzzyGet(obj, target) {
     return realKey ? obj[realKey] : "";
 }
 
-// 💡 強化後的鍵盤產生器：顯示 ✅ 方塊
 const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     const state = userStates[userId];
     const selected = state.tempSelected || [];
@@ -63,11 +62,18 @@ const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     } else {
         const options = subGroup ? INDUSTRY_GROUPS[subGroup] : QUICK_OPTIONS[param];
         btns = options.map(opt => {
+            if (param === "產業") {
+                // 💡 產業改為單選，點擊發送 pick 指令
+                return [Markup.button.callback(opt, `pick_${opt}`)];
+            }
             const isSel = selected.includes(opt);
-            // 這裡會根據選取狀態加上 ✅
             return [Markup.button.callback(`${isSel ? '✅ ' : ''}${opt}`, `toggle_${opt}`)];
         });
-        btns.push([Markup.button.callback('✨ 確認送出', 'confirm_multi')]);
+        
+        // 只有非產業的參數才需要「確認送出」按鈕
+        if (param !== "產業") {
+            btns.push([Markup.button.callback('✨ 確認送出', 'confirm_multi')]);
+        }
     }
 
     if (param !== "籌碼力道" && (param !== "產業" || subGroup)) {
@@ -147,8 +153,7 @@ bot.on('callback_query', async (ctx) => {
         } 
         else if (data.startsWith('indgroup_')) {
             const groupName = data.replace('indgroup_', '');
-            // 在訊息中暫存目前的分組名稱，以便切換 ✅ 時抓取
-            await ctx.editMessageText(`設定 [${groupName}] (可多選)：`, makeMultiSelectKeyboard(userId, "產業", groupName));
+            await ctx.editMessageText(`設定 [${groupName}] (單選)：`, makeMultiSelectKeyboard(userId, "產業", groupName));
         }
         else if (data.startsWith('op_')) {
             const parts = data.split('_');
@@ -164,14 +169,19 @@ bot.on('callback_query', async (ctx) => {
             if (!state.tempSelected.includes(opt)) state.tempSelected.push(opt);
             else state.tempSelected = state.tempSelected.filter(i => i !== opt);
             
-            // 💡 取得目前選單的子群組（從訊息文字中判斷）
             const currentMsgText = ctx.callbackQuery.message.text;
             const subGroupMatch = currentMsgText.match(/設定 \[(.*?)\]/);
             const subGroup = subGroupMatch ? subGroupMatch[1] : null;
 
-            // 僅更新按鈕部分，達成 ✅ 打勾效果
-            await ctx.editMessageReplyMarkup(makeMultiSelectKeyboard(userId, state.stage === "產業" ? "產業" : state.stage, subGroup).reply_markup);
+            await ctx.editMessageReplyMarkup(makeMultiSelectKeyboard(userId, state.stage, subGroup).reply_markup);
         } 
+        else if (data.startsWith('pick_')) {
+            // 💡 處理產業單選：選完直接存入並返回
+            const opt = data.replace('pick_', '');
+            state.params.push({ key: "產業", op: "include", val: opt });
+            state.stage = null;
+            await ctx.reply(`✅ 已新增產業條件：${opt}`, makeKeyboard(userId));
+        }
         else if (data === 'confirm_multi') {
             if (state.tempSelected.length === 0) return await ctx.reply('⚠️ 請至少勾選一個項目！');
             state.tempSelected.forEach(v => state.params.push({ key: state.stage, op: state.tempOp, val: v }));
