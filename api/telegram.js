@@ -52,6 +52,9 @@ function fuzzyGet(obj, target) {
     return realKey ? obj[realKey] : "";
 }
 
+// 產生連結函數
+const getStockLink = (code) => `https://tw.stock.yahoo.com/quote/${code}/technical-analysis`;
+
 const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     const state = userStates[userId];
     const selected = state.tempSelected || [];
@@ -62,6 +65,7 @@ const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     } else {
         const options = subGroup ? INDUSTRY_GROUPS[subGroup] : QUICK_OPTIONS[param];
         btns = options.map(opt => {
+            // 產業與力道為單選，回傳 pick_
             if (param === "產業" || param === "籌碼力道") {
                 return [Markup.button.callback(opt, `pick_${opt}`)];
             }
@@ -152,10 +156,9 @@ bot.on('callback_query', async (ctx) => {
             const groupName = data.replace('indgroup_', '');
             await ctx.editMessageText(`設定 [${groupName}]：`, makeMultiSelectKeyboard(userId, "產業", groupName));
         }
-        // 💡 處理單選覆蓋邏輯 (產業與籌碼力道)
+        // 處理單選覆蓋邏輯
         else if (data.startsWith('pick_')) {
             const val = data.replace('pick_', '');
-            // 🚀 核心修改：先過濾掉該類別(stage)舊有的條件，達成覆蓋效果
             state.params = state.params.filter(f => f.key !== state.stage);
             state.params.push({ key: state.stage, op: state.tempOp, val: val });
             const currentStageName = state.stage;
@@ -183,12 +186,11 @@ bot.on('callback_query', async (ctx) => {
         else if (data === 'confirm_multi') {
             if (state.tempSelected.length === 0) return await ctx.reply('⚠️ 請至少勾選一個項目！');
             state.tempSelected.forEach(v => state.params.push({ key: state.stage, op: state.tempOp, val: v }));
-            const summary = state.tempSelected.join(', ');
             state.tempSelected = []; state.stage = null;
-            await ctx.reply(`✅ 已批次新增：${summary}`, makeKeyboard(userId));
+            await ctx.reply(`✅ 已批次新增。`, makeKeyboard(userId));
         }
         else if (data === 'manual_input') {
-            await ctx.reply(`💬 請輸入 [${state.stage}] 的自定義內容：`);
+            await ctx.reply(`💬 請輸入 [${state.stage}] 的內容：`);
         }
         else if (data.startsWith('del_')) {
             state.params.splice(parseInt(data.replace('del_', '')), 1);
@@ -211,33 +213,23 @@ bot.on('callback_query', async (ctx) => {
                              ? parseFloat(fuzzyGet(s, mv)) || 0 : parseFloat(f.val.replace(/[^\d.-]/g, '')) || 0;
                     return f.op==='>=' ? v>=tv : f.op==='<=' ? v<=tv : v==tv;
                 }));
-                if (result.length === 0) {
-                    await ctx.reply('❌ 無符合股票');
-                    return;
-                }
-                let header = `🎯 篩選結果 (共 ${result.length} 支)\n`;
-                header += `條件: ${filters.map(f => `${f.key}${f.op}${f.val}`).join(', ') || '無'}`;
-                await ctx.reply(header);
+
+                if (result.length === 0) return await ctx.reply('❌ 無符合股票');
+
+                await ctx.reply(`🎯 篩選結果 (共 ${result.length} 支)\n條件: ${filters.map(f => `${f.key}${f.op}${f.val}`).join(', ')}`);
                 const chunkSize = 20; 
                 for (let i = 0; i < result.length; i += chunkSize) {
-                    const chunk = result.slice(i, i + chunkSize);
-                    const list = chunk.map((s, idx) => {
-                        const realIdx = i + idx + 1;
+                    const list = result.slice(i, i + chunkSize).map((s, idx) => {
                         const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
-                        const price = fuzzyGet(s, "價格");
                         const cv = parseFloat(fuzzyGet(s, "漲跌")) || 0;
                         const pv = parseFloat(fuzzyGet(s, "漲跌幅")) || 0;
-                        const getS = (v) => (v > 0 ? "上漲" : v < 0 ? "下跌" : "平盤");
-                        const getP = (v) => (v > 0 ? "漲幅" : v < 0 ? "跌幅" : "平盤");
-                        return `${realIdx}. [${code}] ${fuzzyGet(s, "名稱")}\n價格: ${price} (${getS(cv)}${Math.abs(cv).toFixed(2)} / ${getP(pv)}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
+                        return `${i+idx+1}. [${code}](${getStockLink(code)}) ${fuzzyGet(s, "名稱")}\n價格: ${fuzzyGet(s,"價格")} (${cv>0?'上漲':'下跌'}${Math.abs(cv).toFixed(2)} / ${pv>0?'漲幅':'跌幅'}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
                     }).join('\n');
-                    await ctx.reply(list);
+                    await ctx.reply(list, { parse_mode: 'Markdown', disable_web_page_preview: true });
                     await new Promise(r => setTimeout(r, 500));
                 }
                 await ctx.reply(`🔗 [網頁版清單](https://stock-eosin-kappa.vercel.app/)`);
-            } catch (innerError) {
-                await ctx.reply('❌ 讀取資料超時或失敗，請稍後再試。');
-            }
+            } catch (innerError) { await ctx.reply('❌ 讀取失敗。'); }
         }
     } catch (e) { console.error(e); }
 });
@@ -247,20 +239,17 @@ bot.on('text', async (ctx) => {
     const text = ctx.message.text.trim();
     if (!userStates[userId]) userStates[userId] = { params: [], stage: null };
     const state = userStates[userId];
+
     if (state.stage) {
-        // 🚀 手動輸入時也套用單選覆蓋邏輯 (若目前的類別是產業或籌碼力道)
-        if (state.stage === "產業" || state.stage === "籌碼力道") {
-            state.params = state.params.filter(f => f.key !== state.stage);
-        }
+        if (state.stage === "產業" || state.stage === "籌碼力道") state.params = state.params.filter(f => f.key !== state.stage);
         state.params.push({ key: state.stage, op: state.tempOp, val: text });
         const currentStageName = state.stage;
         state.stage = null; state.tempOp = null;
-        return await ctx.reply(`✅ [${currentStageName}] 已更新為：${text}`, makeKeyboard(userId));
+        return await ctx.reply(`✅ [${currentStageName}] 已更新。`, makeKeyboard(userId));
     }
-    if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) {
-        userStates[userId] = { params: [], stage: null, tempOp: null, tempSelected: [] };
-        return ctx.reply('請選擇分類進行篩選：', makeKeyboard(userId));
-    }
+
+    if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) return ctx.reply('請選擇分類：', makeKeyboard(userId));
+
     if (text.toLowerCase().startsWith('p')) {
         const query = text.substring(1).trim();
         if (!query) return ctx.reply('💡 請輸入代號，例如 P2330');
@@ -270,29 +259,21 @@ bot.on('text', async (ctx) => {
             const res = snap.docs.map(d => d.data()).filter(s => 
                 String(fuzzyGet(s, "代碼")).includes(query) || String(fuzzyGet(s, "名稱")).includes(query)
             );
-            if (res.length === 0) return await ctx.reply(`❌ 找不到與「${query}」相關的股票。`);
+            if (res.length === 0) return await ctx.reply(`❌ 找不到相關股票。`);
             const list = res.slice(0, 10).map((s, idx) => {
                 const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                 const cv = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
                 const pv = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
-                const getS = (v) => (v > 0 ? "上漲" : v < 0 ? "下跌" : "平盤");
-                const getP = (v) => (v > 0 ? "漲幅" : v < 0 ? "跌幅" : "平盤");
-                return `${idx + 1}. [${code}] ${fuzzyGet(s, "名稱")}\n價格: ${fuzzyGet(s,"價格")} (${getS(cv)}${Math.abs(cv).toFixed(2)} / ${getP(pv)}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
+                return `${idx + 1}. [${code}](${getStockLink(code)}) ${fuzzyGet(s, "名稱")}\n價格: ${fuzzyGet(s,"價格")} (${cv>0?'上漲':'下跌'}${Math.abs(cv).toFixed(2)} / ${pv>0?'漲幅':'跌幅'}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
             }).join('\n');
-            await ctx.reply(`🎯 查詢結果 ：\n${list}`);
+            await ctx.reply(`🎯 查詢結果 ：\n${list}`, { parse_mode: 'Markdown', disable_web_page_preview: true });
         } catch (e) { await ctx.reply('❌ 查詢出錯。'); }
     }
 });
 
 export default async function (req, res) {
     if (req.method === 'POST') {
-        try {
-            await bot.handleUpdate(req.body);
-            if (!res.headersSent) res.status(200).send('OK');
-        } catch (err) {
-            if (!res.headersSent) res.status(200).send('OK');
-        }
-    } else {
-        res.status(200).send('Bot Running');
-    }
+        try { await bot.handleUpdate(req.body); res.status(200).send('OK'); }
+        catch (err) { res.status(200).send('OK'); }
+    } else res.status(200).send('Bot Running');
 }
