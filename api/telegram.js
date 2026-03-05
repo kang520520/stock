@@ -19,7 +19,7 @@ let userStates = {};
 
 const GROUPS = {
     "🎯 核心行情": ["價格", "漲跌", "漲跌幅", "成交量(今日)"],
-    "🔍 基礎屬性": ["籌碼力道", "股本(億)"], 
+    "🔍 基礎屬性": ["籌碼力道", "股本(億)"], // 💡 已移除產業
     "💰 籌碼動向": ["外資買賣超", "投信買賣超", "自營商買賣超", "近1日主力買賣超", "近5日主力買賣超", "近20日主力買賣超", "主力連續買賣天數", "主力連續買賣張數"],
     "📊 籌碼集中": ["近5日籌碼集中度", "近10日籌碼集中度", "近20日籌碼集中度", "近60日籌碼集中度"],
     "💎 財報回報": ["近5年平均現金殖利率%"]
@@ -29,7 +29,6 @@ const QUICK_OPTIONS = {
     "價格": ["5MA", "10MA", "20MA", "60MA"],
     "成交量(今日)": ["昨天", "前天", "大前天"],
     "籌碼力道": ["買壓增加", "買壓減緩", "賣壓增加", "賣壓減緩"],
-    "產業專區": [] // 💡 讓主選單按鈕觸發多選邏輯
 };
 
 const INDUSTRY_GROUPS = {
@@ -40,6 +39,7 @@ const INDUSTRY_GROUPS = {
     "📱 電子下游": ["電子下游-筆記型電腦", "電子下游-手機製造", "電子下游-消費電子", "電子下游-安全監控", "電子下游-工業電腦", "電子下游-太陽能", "電子下游-資訊通路", "電子下游-電信服務", "電子下游-顯示器", "電子下游-掃描器", "電子下游-數位相機", "電子下游-光碟片", "電子下游-商業自動化", "電子下游-其他"],
     "💰 金融軟體": ["金融-金控", "金融-銀行", "金融-保險", "金融-證券", "軟體-系統整合", "軟體-遊戲", "軟體-其他"]
 };
+
 function fuzzyGet(obj, target) {
     if (!obj) return "";
     if (obj[target] !== undefined) return obj[target];
@@ -52,17 +52,29 @@ function fuzzyGet(obj, target) {
     return realKey ? obj[realKey] : "";
 }
 
-const makeMultiSelectKeyboard = (userId, param) => {
+// 💡 支援產業二級選單的多選鍵盤產生器
+const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     const state = userStates[userId];
     const selected = state.tempSelected || [];
-    const options = QUICK_OPTIONS[param] || [];
-    const btns = options.map(opt => {
-        const isSel = selected.includes(opt);
-        return [Markup.button.callback(`${isSel ? '✅ ' : ''}${opt}`, `toggle_${opt}`)];
-    });
-    btns.push([Markup.button.callback('✨ 確認送出', 'confirm_multi')]);
-    if (param !== "籌碼力道") btns.push([Markup.button.callback('⌨️ 手動輸入', 'manual_input')]);
-    btns.push([Markup.button.callback('⬅️ 返回', 'main')]);
+    let btns = [];
+
+    if (param === "產業" && !subGroup) {
+        // 第一層：顯示產業大類
+        btns = Object.keys(INDUSTRY_GROUPS).map(g => [Markup.button.callback(g, `indgroup_${g}`)]);
+    } else {
+        // 第二層：顯示具體選項
+        const options = subGroup ? INDUSTRY_GROUPS[subGroup] : QUICK_OPTIONS[param];
+        btns = options.map(opt => {
+            const isSel = selected.includes(opt);
+            return [Markup.button.callback(`${isSel ? '✅ ' : ''}${opt}`, `toggle_${opt}`)];
+        });
+        btns.push([Markup.button.callback('✨ 確認送出', 'confirm_multi')]);
+    }
+
+    if (param !== "籌碼力道" && (param !== "產業" || subGroup)) {
+        btns.push([Markup.button.callback('⌨️ 手動輸入', 'manual_input')]);
+    }
+    btns.push([Markup.button.callback('⬅️ 返回主選單', 'main')]);
     return Markup.inlineKeyboard(btns);
 };
 
@@ -70,6 +82,11 @@ const makeKeyboard = (userId, group = null) => {
     const filters = userStates[userId]?.params || [];
     if (!group) {
         const btns = Object.keys(GROUPS).map(g => [Markup.button.callback(g, `menu_${g}`)]);
+        
+        // 💡 主選單插入「產業專區」
+        const indCount = filters.filter(f => f.key === "產業").length;
+        btns.push([Markup.button.callback(`🏭 產業專區${indCount > 0 ? ` [${indCount}項]` : ''}`, 'set_產業')]);
+        
         const total = filters.length > 0 ? ` (${filters.length}項)` : '';
         if (filters.length > 0) btns.push([Markup.button.callback('📋 查看 / 刪除個別條件', 'view_filters')]);
         btns.push([Markup.button.callback(`🚀 執行選股${total}`, 'run'), Markup.button.callback('🧹 全部清空', 'reset')]);
@@ -94,7 +111,7 @@ const makeOperatorKeyboard = (paramName) => {
 
 bot.start((ctx) => {
     userStates[ctx.from.id] = { params: [], stage: null, tempOp: null, tempSelected: [] };
-    return ctx.reply('查詢單股請輸入 P+代號 (例: P2330獲台積電)', makeKeyboard(ctx.from.id));
+    return ctx.reply('查詢單股請輸入 P+代號 (例: P2330或P台積電)', makeKeyboard(ctx.from.id));
 });
 
 bot.on('callback_query', async (ctx) => {
@@ -120,13 +137,20 @@ bot.on('callback_query', async (ctx) => {
     else if (data.startsWith('set_')) {
         const param = data.replace('set_', '');
         state.stage = param; state.tempSelected = [];
-        if (["籌碼力道", "產業"].includes(param)) {
+        if (param === "產業") {
+            state.tempOp = "include";
+            await ctx.editMessageText(`請先選擇「產業大類」：`, makeMultiSelectKeyboard(userId, param));
+        } else if (param === "籌碼力道") {
             state.tempOp = "include";
             await ctx.editMessageText(`請勾選 [${param}] (可多選)：`, makeMultiSelectKeyboard(userId, param));
         } else {
             await ctx.editMessageText(`請選擇 [${param}] 的條件：`, makeOperatorKeyboard(param));
         }
     } 
+    else if (data.startsWith('indgroup_')) {
+        const groupName = data.replace('indgroup_', '');
+        await ctx.editMessageText(`設定 [${groupName}] (可多選)：`, makeMultiSelectKeyboard(userId, "產業", groupName));
+    }
     else if (data.startsWith('op_')) {
         const parts = data.split('_');
         state.stage = parts[1]; state.tempOp = parts[2];
@@ -140,7 +164,7 @@ bot.on('callback_query', async (ctx) => {
         const opt = data.replace('toggle_', '');
         if (!state.tempSelected.includes(opt)) state.tempSelected.push(opt);
         else state.tempSelected = state.tempSelected.filter(i => i !== opt);
-        await ctx.editMessageReplyMarkup(makeMultiSelectKeyboard(userId, state.stage).reply_markup);
+        await ctx.editMessageReplyMarkup(ctx.callbackQuery.message.reply_markup);
     } 
     else if (data === 'confirm_multi') {
         if (state.tempSelected.length === 0) return await ctx.reply('⚠️ 請至少勾選一個項目！');
@@ -190,11 +214,11 @@ bot.on('callback_query', async (ctx) => {
                     const realIdx = i + idx + 1;
                     const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                     const price = fuzzyGet(s, "價格");
-                    const changeVal = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
-                    const pctVal = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
-                    const getChangeStatus = (val) => (val > 0 ? "上漲" : val < 0 ? "下跌" : "平盤");
-                    const getPctStatus = (val) => (val > 0 ? "漲幅" : val < 0 ? "跌幅" : "平盤");
-                    return `${realIdx}. [${code}] ${fuzzyGet(s, "名稱")}\n價格: ${price} (${getChangeStatus(changeVal)}${Math.abs(changeVal).toFixed(2)} / ${getPctStatus(pctVal)}${Math.abs(pctVal).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
+                    const cv = parseFloat(fuzzyGet(s, "漲跌")) || 0;
+                    const pv = parseFloat(fuzzyGet(s, "漲跌幅")) || 0;
+                    const getS = (v) => (v > 0 ? "上漲" : v < 0 ? "下跌" : "平盤");
+                    const getP = (v) => (v > 0 ? "漲幅" : v < 0 ? "跌幅" : "平盤");
+                    return `${realIdx}. [${code}] ${fuzzyGet(s, "名稱")}\n價格: ${price} (${getS(cv)}${Math.abs(cv).toFixed(2)} / ${getP(pv)}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
                 }).join('\n');
                 await ctx.reply(list);
                 await new Promise(r => setTimeout(r, 500));
@@ -211,7 +235,7 @@ bot.on('text', async (ctx) => {
 
     if (state.stage) {
         state.params.push({ key: state.stage, op: state.tempOp, val: text });
-        state.stage = null; state.tempOp = null;
+        state.stage = null;
         return await ctx.reply(`✅ 已新增：${text}`, makeKeyboard(userId));
     }
 
