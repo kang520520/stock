@@ -53,7 +53,7 @@ function fuzzyGet(obj, target) {
 }
 
 // 產生連結函數
-const getStockLink = (code) => `https://tw.stock.yahoo.com/quote/${code}/technical-analysis`;
+const getStockLink = (code) => `https://www.cmoney.tw/finance/${code}/stockmainkline`;
 
 const makeMultiSelectKeyboard = (userId, param, subGroup = null) => {
     const state = userStates[userId];
