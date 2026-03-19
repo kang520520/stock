@@ -28,7 +28,7 @@ const GROUPS = {
 const QUICK_OPTIONS = {
     "價格": ["5MA", "10MA", "20MA", "60MA"],
     "成交量(今日)": ["昨天", "前天", "大前天"],
-    "籌碼力道": ["買壓增加", "買壓減緩", "賣壓增加", "買壓減緩"],
+    "籌碼力道": ["買壓增加", "買壓減緩", "賣壓增加", "賣壓減緩"],
 };
 
 const INDUSTRY_GROUPS = {
@@ -235,10 +235,10 @@ bot.on('text', async (ctx) => {
     const userId = ctx.from.id;
     const text = ctx.message.text.trim();
     const lowerText = text.toLowerCase();
-    
     if (!userStates[userId]) userStates[userId] = { params: [], stage: null };
     const state = userStates[userId];
 
+    // 處理正在輸入條件值的狀態
     if (state.stage) {
         if (state.stage === "產業" || state.stage === "籌碼力道") state.params = state.params.filter(f => f.key !== state.stage);
         state.params.push({ key: state.stage, op: state.tempOp, val: text });
@@ -247,33 +247,41 @@ bot.on('text', async (ctx) => {
         return await ctx.reply(`✅ [${currentStageName}] 已更新。`, makeKeyboard(userId));
     }
 
-    if (["選單", "menu", "start", "篩選"].includes(lowerText)) return ctx.reply('請選擇分類：', makeKeyboard(userId));
+    // 處理選單喚起
+    if (["選單", "menu", "start", "篩選"].includes(lowerText)) {
+        return await ctx.reply('請選擇分類：', makeKeyboard(userId));
+    }
 
-    // 先判斷 PP，解決 P 與 PP 重疊的問題
+    // --- 核心修正：優先判斷 PP 查詢 ---
     if (lowerText.startsWith('pp')) {
         const query = text.substring(2).trim();
-        if (!query) return ctx.reply('💡 請輸入代號，例如 PP2330');
+        if (!query) return await ctx.reply('💡 請輸入代號，例如 PP2330');
+        
         await ctx.reply(`🔍 正在查詢「${query}」...`);
         try {
             const snap = await getDocs(collection(db, "stocks"));
             const res = snap.docs.map(d => d.data()).filter(s => 
                 String(fuzzyGet(s, "代碼")).includes(query) || String(fuzzyGet(s, "名稱")).includes(query)
             );
+            
             if (res.length === 0) return await ctx.reply(`❌ 找不到與「${query}」相關的股票。`);
+            
             const list = res.slice(0, 10).map((s, idx) => {
                 const code = String(fuzzyGet(s, "代碼")).replace(/[ "]/g, "");
                 const cv = parseFloat(fuzzyGet(s, "漲跌").toString().replace('%', '')) || 0;
                 const pv = parseFloat(fuzzyGet(s, "漲跌幅").toString().replace('%', '')) || 0;
                 return `${idx + 1}. [${code}](${getStockLink(code)}) ${fuzzyGet(s, "名稱")}\n價格: ${fuzzyGet(s,"價格")} (${cv>0?'上漲':'下跌'}${Math.abs(cv).toFixed(2)} / ${pv>0?'漲幅':'跌幅'}${Math.abs(pv).toFixed(2)}%)\n產業: ${fuzzyGet(s, "產業") || "未分類"}\n`;
             }).join('\n');
+            
             return await ctx.reply(`🎯 查詢結果 ：\n${list}`, { parse_mode: 'Markdown', disable_web_page_preview: true });
         } catch (e) { 
             return await ctx.reply('❌ 查詢出錯。'); 
         }
-    } 
-    // 若只打一個 P，給予提醒而非錯誤
-    else if (lowerText.startsWith('p')) {
-        return ctx.reply('💡 指令已更改為「PP」開頭囉！請輸入例如：PP2330');
+    }
+
+    // --- 防呆提醒：若是只輸入單個 P ---
+    if (lowerText.startsWith('p') && !lowerText.startsWith('pp')) {
+        return await ctx.reply('💡 指令已更改為「PP」開頭囉！請輸入例如：PP2330');
     }
 });
 
