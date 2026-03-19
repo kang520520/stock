@@ -118,7 +118,7 @@ const makeOperatorKeyboard = (paramName) => {
 
 bot.start((ctx) => {
     userStates[ctx.from.id] = { params: [], stage: null, tempOp: null, tempSelected: [] };
-    return ctx.reply('查詢單股請輸入 P+代號 (例: P2330或P台積電)', makeKeyboard(ctx.from.id));
+    return ctx.reply('查詢單股請輸入 PP+代號 (例: PP2330或PP台積電)', makeKeyboard(ctx.from.id));
 });
 
 bot.on('callback_query', async (ctx) => {
@@ -250,7 +250,7 @@ bot.on('text', async (ctx) => {
 
     if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) return ctx.reply('請選擇分類：', makeKeyboard(userId));
 
-    if (text.toLowerCase().startsWith('PP')) {
+    if (text.toLowerCase().startsWith('pp')) {
         const query = text.substring(2).trim();
         if (!query) return ctx.reply('💡 請輸入代號，例如 PP2330');
         await ctx.reply(`🔍 正在查詢「${query}」...`);
