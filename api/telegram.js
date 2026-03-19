@@ -251,7 +251,7 @@ bot.on('text', async (ctx) => {
     if (["選單", "menu", "start", "篩選"].includes(text.toLowerCase())) return ctx.reply('請選擇分類：', makeKeyboard(userId));
 
     if (text.toLowerCase().startsWith('PP')) {
-        const query = text.substring(1).trim();
+        const query = text.substring(2).trim();
         if (!query) return ctx.reply('💡 請輸入代號，例如 PP2330');
         await ctx.reply(`🔍 正在查詢「${query}」...`);
         try {
