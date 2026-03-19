@@ -280,9 +280,9 @@ bot.on('text', async (ctx) => {
     }
 
     // --- 防呆提醒：若是只輸入單個 P ---
-    if (lowerText.startsWith('p') && !lowerText.startsWith('pp')) {
-        return await ctx.reply('💡 指令已更改為「PP」開頭囉！請輸入例如：PP2330');
-    }
+    //if (lowerText.startsWith('p') && !lowerText.startsWith('pp')) {
+        //return await ctx.reply('💡 指令已更改為「PP」開頭囉！請輸入例如：PP2330');
+    //}
 });
 
 export default async function (req, res) {
